@@ -1,0 +1,13 @@
+# Secrets et état local — ne JAMAIS versionner
+.env
+secrets/*
+!secrets/README.md
+backups/*
+!backups/.gitkeep
+reports/*
+!reports/.gitkeep
+*.dump
+*.sops.dec.*
+__pycache__/
+*.pyc
+.venv/

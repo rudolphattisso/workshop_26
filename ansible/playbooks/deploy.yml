@@ -1,0 +1,39 @@
+# Déploiement complet et idempotent de la plateforme (installation initiale ou mise à jour).
+#   scripts/ops.ps1 deploy
+- name: Déployer Resilience-Alpha sur le PC Hôte
+  hosts: pc-hote
+  gather_facts: false
+  tasks:
+    - ansible.builtin.import_tasks: ../tasks/preflight.yml
+    - ansible.builtin.import_tasks: ../tasks/secrets.yml
+
+    - name: "Validation | Syntaxe du fichier Compose"
+      ansible.builtin.command: "{{ compose }} config --quiet"
+      changed_when: false
+
+    - name: "Validation | Configuration et règles Prometheus (promtool)"
+      ansible.builtin.command: >-
+        docker run --rm -v {{ project_dir }}/infra/prometheus:/etc/prometheus:ro
+        --entrypoint promtool prom/prometheus:v3.5.0
+        check config /etc/prometheus/prometheus.yml
+      changed_when: false
+
+    - name: "Validation | Configuration Alertmanager (amtool)"
+      ansible.builtin.command: >-
+        docker run --rm -v {{ project_dir }}/infra/alertmanager:/etc/alertmanager:ro
+        --entrypoint amtool prom/alertmanager:v0.28.1
+        check-config /etc/alertmanager/alertmanager.yml
+      changed_when: false
+
+    - name: "Build | Images applicatives"
+      ansible.builtin.command: "{{ compose }} build {{ '--no-cache' if (no_cache | default(false) | bool) else '' }}"
+      register: build
+      changed_when: "'Built' in build.stderr or 'naming to' in build.stderr"
+
+    - name: "Run | Démarrage / convergence des conteneurs (attente des healthchecks)"
+      ansible.builtin.command: "{{ compose }} up -d --remove-orphans --wait --wait-timeout 180"
+      register: up
+      changed_when: "'Started' in up.stderr or 'Recreated' in up.stderr or 'Created' in up.stderr"
+
+    - ansible.builtin.import_tasks: ../tasks/attach_controller.yml
+    - ansible.builtin.import_tasks: ../tasks/verify.yml

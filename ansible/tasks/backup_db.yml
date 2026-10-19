@@ -1,0 +1,37 @@
+# Sauvegarde logique de la base (format custom pg_dump) + empreinte SHA-256.
+- name: "Sauvegarde | Dossier backups/"
+  ansible.builtin.file: { path: "{{ backup_dir }}", state: directory, mode: "0750" }
+
+- name: "Sauvegarde | Nom du fichier"
+  ansible.builtin.set_fact:
+    backup_file: "{{ backup_dir }}/payments-{{ '%Y%m%dT%H%M%SZ' | strftime(now().timestamp() | int, utc=true) }}.dump"
+
+- name: "Sauvegarde | pg_dump (cohérent, à chaud)"
+  ansible.builtin.shell: >-
+    set -o pipefail;
+    {{ compose }} exec -T postgres pg_dump -U payments_admin -d payments --format=custom
+    > "{{ backup_file }}"
+  args: { executable: /bin/bash }
+  changed_when: true
+
+- name: "Sauvegarde | Empreinte SHA-256"
+  ansible.builtin.shell: cd "{{ backup_dir }}" && sha256sum "$(basename '{{ backup_file }}')" > "{{ backup_file }}.sha256"
+  changed_when: true
+
+- name: "Sauvegarde | Contrôle d'intégrité (le dump est lisible par pg_restore)"
+  ansible.builtin.shell: >-
+    {{ compose }} exec -T postgres pg_restore --list < "{{ backup_file }}" | grep -c "TABLE DATA"
+  register: dump_tables
+  changed_when: false
+  failed_when: dump_tables.stdout | int < 2
+
+- name: "Sauvegarde | Rotation (conserver les {{ backup_keep }} plus récentes)"
+  ansible.builtin.shell: >-
+    cd "{{ backup_dir }}" && ls -1t payments-*.dump | tail -n +{{ backup_keep | int + 1 }}
+    | while read f; do rm -f "$f" "$f.sha256"; echo "$f"; done
+  register: rotated
+  changed_when: rotated.stdout | length > 0
+
+- name: "Sauvegarde | Résultat"
+  ansible.builtin.debug:
+    msg: "{{ backup_file | basename }} ({{ dump_tables.stdout }} tables de données)"

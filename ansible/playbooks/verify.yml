@@ -1,0 +1,8 @@
+# Contrôle de santé fonctionnel (à lancer à tout moment, ex. avant la démo).
+#   scripts/ops.ps1 verify
+- name: Vérifier la plateforme
+  hosts: pc-hote
+  gather_facts: false
+  tasks:
+    - ansible.builtin.import_tasks: ../tasks/attach_controller.yml
+    - ansible.builtin.import_tasks: ../tasks/verify.yml

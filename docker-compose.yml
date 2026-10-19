@@ -1,0 +1,398 @@
+# =============================================================================
+#  PROJECT RESILIENCE-ALPHA — définition de la plateforme (Docker Compose)
+#
+#  Compose = « QUOI tourne et COMMENT c'est relié » (état désiré des conteneurs).
+#  Ansible  = « COMMENT on l'opère » (installation, secrets, contrôles, sauvegarde,
+#             restauration, PRA) — voir ansible/ et docs/INFRA.md.
+#
+#  Lancement normal : scripts/ops.ps1 deploy   (ou ./scripts/ops.sh deploy)
+#  Les paramètres modifiables sont dans .env (copie de .env.example).
+# =============================================================================
+name: ${COMPOSE_PROJECT_NAME:-resilience}
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+x-hardening: &hardening
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+  logging: *logging
+  restart: unless-stopped
+
+x-python-service: &python-service
+  <<: *hardening
+  read_only: true
+  tmpfs: ["/tmp:size=16m"]
+
+# -----------------------------------------------------------------------------
+# Réseaux : segmentation par rôle. "internal: true" = aucune sortie vers l'extérieur
+# (limite l'exfiltration et les téléchargements d'outils en cas de compromission).
+# -----------------------------------------------------------------------------
+networks:
+  edge:         # seul réseau exposé au LAN (hotspot) : uniquement le WAF
+    ipam: { config: [{ subnet: 172.30.10.0/24 }] }
+  app:          # WAF <-> frontal / auth / API
+    internal: true
+    ipam: { config: [{ subnet: 172.30.20.0/24 }] }
+  data:         # services métier <-> PostgreSQL
+    internal: true
+    ipam: { config: [{ subnet: 172.30.30.0/24 }] }
+  monitoring:   # collecte des métriques et journaux
+    internal: true
+    ipam: { config: [{ subnet: 172.30.40.0/24 }] }
+  control:      # moteur de remédiation <-> proxy Docker (droits restreints)
+    internal: true
+    ipam: { config: [{ subnet: 172.30.50.0/24 }] }
+  dockerapi-ro: # Alloy <-> proxy Docker en lecture seule
+    internal: true
+    ipam: { config: [{ subnet: 172.30.60.0/24 }] }
+  mgmt:         # interfaces d'admin publiées sur 127.0.0.1 uniquement
+    ipam: { config: [{ subnet: 172.30.70.0/24 }] }
+
+volumes:
+  pgdata:
+  prometheus-data:
+  alertmanager-data:
+  loki-data:
+  grafana-data:
+  alloy-data:
+
+# -----------------------------------------------------------------------------
+# Secrets : fichiers générés localement par Ansible (playbook secrets.yml) dans
+# ./secrets/ — jamais versionnés. Montés en lecture seule dans /run/secrets/.
+# -----------------------------------------------------------------------------
+secrets:
+  postgres_password:      { file: ./secrets/postgres_password }
+  payment_db_password:    { file: ./secrets/payment_db_password }
+  auth_db_password:       { file: ./secrets/auth_db_password }
+  exporter_db_password:   { file: ./secrets/exporter_db_password }
+  jwt_secret:             { file: ./secrets/jwt_secret }
+  demo_user_password:     { file: ./secrets/demo_user_password }
+  probe_user_password:    { file: ./secrets/probe_user_password }
+  remediation_token:      { file: ./secrets/remediation_token }
+  grafana_admin_password: { file: ./secrets/grafana_admin_password }
+
+services:
+  # ===========================================================================
+  #  SI DE PAIEMENT
+  # ===========================================================================
+  waf:
+    <<: *hardening
+    image: ${WAF_IMAGE:-owasp/modsecurity-crs:4.25.2-nginx-alpine-lts}
+    ports:
+      - "${PUBLIC_BIND_ADDR:-0.0.0.0}:${PUBLIC_HTTP_PORT:-80}:8080"
+    environment:
+      PORT: "8080"
+      BACKEND: http://frontend:8080          # requis par l'image, routage réel dans default.conf
+      METRICS_ALLOW_FROM: 172.30.40.0/24     # stub_status : réseau monitoring uniquement
+      LOGLEVEL: warn
+      BLOCKING_PARANOIA: ${WAF_PARANOIA:-1}
+      ANOMALY_INBOUND: ${WAF_ANOMALY_INBOUND:-5}
+      MODSEC_RULE_ENGINE: ${WAF_RULE_ENGINE:-On}   # On = bloque, DetectionOnly = journalise
+      MODSEC_AUDIT_LOG: /dev/stdout
+      MODSEC_AUDIT_LOG_FORMAT: JSON
+      WAF_API_RATE: ${WAF_API_RATE:-20r/s}
+      WAF_API_BURST: ${WAF_API_BURST:-40}
+      WAF_LOGIN_RATE: ${WAF_LOGIN_RATE:-5r/s}
+      WAF_LOGIN_BURST: ${WAF_LOGIN_BURST:-10}
+    volumes:
+      - ./infra/waf/default.conf.template:/etc/nginx/templates/conf.d/default.conf.template:ro
+      - ./infra/waf/logging.conf.template:/etc/nginx/templates/conf.d/logging.conf.template:ro
+    networks: [edge, app, monitoring]
+    depends_on: [frontend]
+    labels: { resilience.tier: edge }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    deploy: { resources: { limits: { memory: 256m, cpus: "1.0" } } }
+
+  frontend:
+    <<: *hardening
+    build: ./services/frontend
+    image: resilience/frontend:${APP_VERSION:-1.0.0}
+    read_only: true
+    tmpfs: ["/tmp:size=16m"]
+    networks: [app]
+    labels: { resilience.tier: business }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    deploy: { resources: { limits: { memory: 64m, cpus: "0.5" } } }
+
+  auth:
+    <<: *python-service
+    build: { context: ./services, args: { SERVICE: auth } }
+    image: resilience/auth:${APP_VERSION:-1.0.0}
+    environment:
+      DB_HOST: postgres
+      DB_NAME: payments
+      DB_USER: auth_svc
+      TOKEN_TTL_SECONDS: "900"
+    secrets: [auth_db_password, jwt_secret]
+    networks: [app, data, monitoring]
+    depends_on: { postgres: { condition: service_healthy } }
+    labels: { resilience.tier: business }
+    deploy: { resources: { limits: { memory: 192m, cpus: "1.0" } } }
+
+  payment-api:
+    <<: *python-service
+    build: { context: ./services, args: { SERVICE: payment-api } }
+    image: resilience/payment-api:${APP_VERSION:-1.0.0}
+    environment:
+      DB_HOST: postgres
+      DB_NAME: payments
+      DB_USER: payment_svc
+      MAX_AMOUNT: "10000"
+    secrets: [payment_db_password, jwt_secret]
+    networks: [app, data, monitoring]
+    depends_on: { postgres: { condition: service_healthy } }
+    labels: { resilience.tier: business }
+    deploy: { resources: { limits: { memory: 192m, cpus: "1.0" } } }
+
+  postgres:
+    <<: *hardening
+    image: postgres:16-alpine
+    user: "70:70"                       # utilisateur postgres de l'image alpine, sans root
+    read_only: true
+    tmpfs: ["/tmp:size=32m", "/var/run/postgresql:size=1m,uid=70,gid=70"]
+    environment:
+      POSTGRES_DB: payments
+      POSTGRES_USER: payments_admin
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+      - payment_db_password
+      - auth_db_password
+      - exporter_db_password
+      - demo_user_password
+      - probe_user_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/10-init.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
+    networks: [data]                    # aucune exposition, même sur 127.0.0.1
+    labels: { resilience.tier: data }
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payments_admin -d payments"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy: { resources: { limits: { memory: 512m, cpus: "1.0" } } }
+
+  # ===========================================================================
+  #  OBSERVABILITÉ
+  # ===========================================================================
+  prometheus:
+    <<: *hardening
+    image: prom/prometheus:v3.5.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --web.enable-lifecycle          # permet à Ansible de recharger la conf (POST /-/reload)
+    volumes:
+      - ./infra/prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    ports: ["${ADMIN_BIND_ADDR:-127.0.0.1}:${PROMETHEUS_PORT:-9090}:9090"]
+    networks: [monitoring, mgmt]
+    labels: { resilience.tier: observability }
+    deploy: { resources: { limits: { memory: 512m, cpus: "1.0" } } }
+
+  alertmanager:
+    <<: *hardening
+    image: prom/alertmanager:v0.28.1
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - ./infra/alertmanager:/etc/alertmanager:ro
+      - alertmanager-data:/alertmanager
+    secrets: [remediation_token]
+    ports: ["${ADMIN_BIND_ADDR:-127.0.0.1}:${ALERTMANAGER_PORT:-9093}:9093"]
+    networks: [monitoring, mgmt]
+    labels: { resilience.tier: observability }
+    deploy: { resources: { limits: { memory: 128m, cpus: "0.5" } } }
+
+  loki:
+    <<: *hardening
+    image: grafana/loki:3.5.3
+    command: ["-config.file=/etc/loki/loki.yml"]
+    volumes:
+      - ./infra/loki/loki.yml:/etc/loki/loki.yml:ro
+      - ./infra/loki/rules:/etc/loki/rules:ro
+      - loki-data:/loki
+    networks: [monitoring]
+    labels: { resilience.tier: observability }
+    deploy: { resources: { limits: { memory: 512m, cpus: "1.0" } } }
+
+  alloy:
+    <<: *hardening
+    image: grafana/alloy:v1.10.0
+    user: alloy                         # non-root : l'accès Docker passe par le proxy lecture seule
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    environment:
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-resilience}
+      DOCKER_HOST: tcp://docker-proxy-ro:2375
+    volumes:
+      - ./infra/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy-data:/var/lib/alloy
+    networks: [monitoring, dockerapi-ro]
+    depends_on: [loki, docker-proxy-ro]
+    labels: { resilience.tier: observability }
+    deploy: { resources: { limits: { memory: 256m, cpus: "0.5" } } }
+
+  grafana:
+    <<: *hardening
+    image: grafana/grafana:12.1.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: ${GRAFANA_ANONYMOUS_VIEWER:-true}   # lecture seule, utile pour le jury
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/resilience-overview.json
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    secrets: [grafana_admin_password]
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports: ["${ADMIN_BIND_ADDR:-127.0.0.1}:${GRAFANA_PORT:-3000}:3000"]
+    networks: [monitoring, mgmt]
+    depends_on: [prometheus, loki]
+    labels: { resilience.tier: observability }
+    deploy: { resources: { limits: { memory: 384m, cpus: "1.0" } } }
+
+  blackbox:
+    <<: *hardening
+    image: prom/blackbox-exporter:v0.27.0
+    command: ["--config.file=/etc/blackbox/blackbox.yml"]
+    volumes: ["./infra/blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro"]
+    networks: [monitoring]
+    labels: { resilience.tier: observability }
+    deploy: { resources: { limits: { memory: 64m, cpus: "0.25" } } }
+
+  waf-exporter:
+    <<: *hardening
+    image: nginx/nginx-prometheus-exporter:1.4.2
+    command: ["--nginx.scrape-uri=http://waf:8080/metrics/nginx"]
+    networks: [monitoring]
+    labels: { resilience.tier: observability }
+    deploy: { resources: { limits: { memory: 32m, cpus: "0.25" } } }
+
+  postgres-exporter:
+    <<: *hardening
+    image: prometheuscommunity/postgres-exporter:v0.17.1
+    environment:
+      DATA_SOURCE_URI: postgres:5432/payments?sslmode=disable
+      DATA_SOURCE_USER: exporter
+      DATA_SOURCE_PASS_FILE: /run/secrets/exporter_db_password
+    secrets: [exporter_db_password]
+    networks: [data, monitoring]
+    depends_on: { postgres: { condition: service_healthy } }
+    labels: { resilience.tier: observability }
+    deploy: { resources: { limits: { memory: 64m, cpus: "0.25" } } }
+
+  # cAdvisor a besoin d'un accès privilégié à l'hôte pour lire les cgroups : c'est une
+  # exception assumée et documentée (réseau monitoring interne, aucun port publié).
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.55.1
+    privileged: true
+    devices: ["/dev/kmsg"]
+    command: ["--docker_only=true", "--housekeeping_interval=10s", "--store_container_labels=true",
+              "--disable_metrics=percpu,sched,tcp,udp,disk,diskIO,hugetlb,referenced_memory,cpu_topology,resctrl"]
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks: [monitoring]
+    logging: *logging
+    restart: unless-stopped
+    labels: { resilience.tier: observability }
+    deploy: { resources: { limits: { memory: 256m, cpus: "0.5" } } }
+
+  txprobe:
+    <<: *python-service
+    build: { context: ./services, args: { SERVICE: txprobe } }
+    image: resilience/txprobe:${APP_VERSION:-1.0.0}
+    environment:
+      PROBE_TARGET: http://waf:8080
+      PROBE_INTERVAL_SECONDS: "5"
+      PROBE_USERNAME: synthetic-probe
+    secrets: [probe_user_password]
+    networks: [app, monitoring]
+    depends_on: [waf]
+    labels: { resilience.tier: observability }
+    deploy: { resources: { limits: { memory: 128m, cpus: "0.25" } } }
+
+  # ===========================================================================
+  #  REMÉDIATION (plan de contrôle)
+  # ===========================================================================
+  remediation:
+    <<: *python-service
+    build: { context: ./services, args: { SERVICE: remediation } }
+    image: resilience/remediation:${APP_VERSION:-1.0.0}
+    environment:
+      DOCKER_API: http://docker-proxy:2375
+      COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME:-resilience}
+      TXPROBE_URL: http://txprobe:8000
+      REMEDIATION_ALLOWED_TARGETS: waf,frontend,auth,payment-api,postgres
+      REMEDIATION_COOLDOWN_SECONDS: "${REMEDIATION_COOLDOWN_SECONDS:-45}"
+      REMEDIATION_VERIFY_TIMEOUT_SECONDS: "90"
+    secrets: [remediation_token]
+    ports: ["${ADMIN_BIND_ADDR:-127.0.0.1}:${REMEDIATION_PORT:-8090}:8000"]
+    networks: [monitoring, control, mgmt]
+    depends_on: [docker-proxy]
+    labels: { resilience.tier: control }
+    deploy: { resources: { limits: { memory: 128m, cpus: "0.5" } } }
+
+  # Le moteur de remédiation n'accède JAMAIS directement au socket Docker : ce proxy
+  # n'autorise que GET /containers/* et POST start/stop/restart (pas de create, exec,
+  # images, volumes, réseaux...). Toute autre requête reçoit un 403.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:v0.4.2
+    environment:
+      CONTAINERS: "1"
+      ALLOW_RESTARTS: "1"
+      ALLOW_START: "1"
+      ALLOW_STOP: "1"
+      POST: "0"
+      PING: "1"
+      VERSION: "1"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Règles HAProxy durcies : seul POST autorisé = start/stop/restart (voir le fichier)
+      - ./infra/docker-proxy/haproxy.cfg.template:/usr/local/etc/haproxy/haproxy.cfg.template:ro
+    networks: [control]
+    logging: *logging
+    restart: unless-stopped
+    labels: { resilience.tier: control }
+    deploy: { resources: { limits: { memory: 64m, cpus: "0.25" } } }
+
+  docker-proxy-ro:
+    image: tecnativa/docker-socket-proxy:v0.4.2
+    environment:
+      CONTAINERS: "1"
+      EVENTS: "1"
+      NETWORKS: "1"                     # lecture seule (POST=0) : requis par la découverte Docker
+      POST: "0"
+      PING: "1"
+      VERSION: "1"
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]
+    networks: [dockerapi-ro]
+    logging: *logging
+    restart: unless-stopped
+    labels: { resilience.tier: observability }
+    deploy: { resources: { limits: { memory: 64m, cpus: "0.25" } } }

@@ -1,0 +1,25 @@
+# Règles évaluées par le ruler Loki sur les journaux (fonction SOC / SIEM léger).
+# Les alertes partent vers le même Alertmanager que celles de Prometheus.
+groups:
+  - name: security-logs
+    rules:
+      - alert: WafAttackBurst
+        expr: sum(count_over_time({service="waf"} |= "ModSecurity" [1m])) > 20
+        for: 0s
+        labels: { severity: major, remediation: none, source: loki }
+        annotations:
+          summary: "Plus de 20 requêtes bloquées/détectées par le WAF en 1 min"
+
+      - alert: LoginBruteForce
+        expr: sum(count_over_time({service="auth"} |= "login_failed" [1m])) > 10
+        for: 0s
+        labels: { severity: major, remediation: none, source: loki }
+        annotations:
+          summary: "Plus de 10 échecs de connexion en 1 min (force brute probable)"
+
+      - alert: RemediationFailed
+        expr: sum(count_over_time({service="remediation"} |= "remediation_failed" [5m])) > 0
+        for: 0s
+        labels: { severity: critical, remediation: none, source: loki }
+        annotations:
+          summary: "Une remédiation automatique a échoué : intervention humaine requise (PRA)"

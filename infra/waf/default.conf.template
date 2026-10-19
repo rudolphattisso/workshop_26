@@ -1,0 +1,76 @@
+# WAF = point d'entrée UNIQUE de la plateforme (seul conteneur métier publié sur le réseau).
+# ModSecurity + OWASP CRS sont chargés par conf.d/modsecurity.conf (image officielle).
+# Les variables ${...} sont substituées au démarrage (envsubst) ; les $nginx restent intactes.
+
+server_tokens off;
+more_set_headers 'Server: alphapay';
+
+map $http_upgrade $connection_upgrade { default upgrade; '' close; }
+
+# Anti-DoS applicatif : limite par IP source sur l'API, file d'attente courte, réponse 429.
+limit_req_zone  $binary_remote_addr zone=api_per_ip:10m rate=${WAF_API_RATE};
+limit_req_zone  $binary_remote_addr zone=login_per_ip:10m rate=${WAF_LOGIN_RATE};
+limit_conn_zone $binary_remote_addr zone=conn_per_ip:10m;
+limit_req_status 429;
+limit_conn_status 429;
+
+server {
+    listen ${PORT} default_server;
+    server_name _;
+
+    client_max_body_size 64k;
+    limit_conn conn_per_ip 50;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+    add_header Referrer-Policy no-referrer always;
+
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header Proxy "";
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Request-Id $request_id;
+    proxy_connect_timeout 3s;
+    proxy_read_timeout 15s;
+
+    # Variables => résolution DNS dynamique (resolver Docker) : si un conteneur est recréé
+    # et change d'IP pendant une remédiation, le WAF le retrouve sans redémarrer.
+    set $frontend http://frontend:8080;
+    set $payment  http://payment-api:8000;
+    set $auth     http://auth:8000;
+
+    location = /healthz { access_log off; modsecurity off; return 200 "ok\n"; }
+
+    # stub_status pour nginx-prometheus-exporter, réservé au réseau de supervision
+    location = /metrics/nginx {
+        access_log off;
+        modsecurity off;
+        allow ${METRICS_ALLOW_FROM};
+        deny all;
+        stub_status;
+    }
+
+    # Readiness exposée aux sondes (blackbox) — vérifie aussi la base de données
+    location = /api/payments/ready { limit_req zone=api_per_ip burst=20 nodelay; proxy_pass $payment/ready; }
+    location = /api/auth/ready     { limit_req zone=api_per_ip burst=20 nodelay; proxy_pass $auth/ready; }
+
+    location = /api/auth/login {
+        limit_req zone=login_per_ip burst=${WAF_LOGIN_BURST} nodelay;
+        proxy_pass $auth/auth/login;
+    }
+
+    location /api/payments {
+        limit_req zone=api_per_ip burst=${WAF_API_BURST} nodelay;
+        rewrite ^/api(/payments.*)$ $1 break;
+        proxy_pass $payment;
+    }
+
+    # Tout le reste de /api est refusé (pas de docs/openapi exposés au réseau)
+    location /api/ { return 404; }
+
+    location / {
+        limit_req zone=api_per_ip burst=${WAF_API_BURST} nodelay;
+        proxy_pass $frontend;
+    }
+}
