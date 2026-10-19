@@ -35,6 +35,21 @@ groups:
         annotations:
           summary: "Le frontal web ne répond plus via le WAF"
 
+      # Vault : indisponible (aucune réponse) -> redémarrage ; le sidecar le redescelle ensuite seul.
+      - alert: VaultDown
+        expr: probe_success{service="vault"} == 0 and probe_http_status_code{service="vault"} != 503
+        for: 10s
+        labels: { severity: critical, remediation: restart, target: vault }
+        annotations:
+          summary: "HashiCorp Vault (source des secrets) ne répond plus"
+
+      - alert: VaultSealed
+        expr: probe_http_status_code{service="vault"} == 503
+        for: 30s
+        labels: { severity: major, remediation: none }
+        annotations:
+          summary: "Vault est scellé depuis 30 s : le sidecar vault-unsealer aurait dû le desceller"
+
       - alert: PostgresDown
         expr: pg_up == 0
         for: 10s

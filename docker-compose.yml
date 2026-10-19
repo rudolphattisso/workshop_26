@@ -52,6 +52,9 @@ networks:
   bw-universe:  # plan de contrôle BunkerWeb : scheduler <-> instance (API interne)
     internal: true
     ipam: { config: [{ subnet: 172.30.80.0/24 }] }
+  vault:        # HashiCorp Vault <-> sidecar de descellement
+    internal: true
+    ipam: { config: [{ subnet: 172.30.100.0/24 }] }
   siem:         # Wazuh : agent -> manager (1514/1515) ; alertes du manager -> Alloy (syslog UDP 5514)
     internal: true
     ipam: { config: [{ subnet: 172.30.90.0/24 }] }
@@ -74,6 +77,8 @@ volumes:
   wazuh_agentless:
   wazuh_wodles:
   agent-logs:
+  vault-data:
+  vault-keys:
 
 # -----------------------------------------------------------------------------
 # Secrets : fichiers générés localement par Ansible (playbook secrets.yml) dans
@@ -404,11 +409,11 @@ services:
       DOCKER_API: http://docker-proxy:2375
       COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME:-resilience}
       TXPROBE_URL: http://txprobe:8000
-      REMEDIATION_ALLOWED_TARGETS: bunkerweb,frontend,auth,payment-api,postgres
+      REMEDIATION_ALLOWED_TARGETS: bunkerweb,frontend,auth,payment-api,postgres,vault
       REMEDIATION_COOLDOWN_SECONDS: "${REMEDIATION_COOLDOWN_SECONDS:-45}"
       REMEDIATION_VERIFY_TIMEOUT_SECONDS: "90"
     secrets: [remediation_token]
-    ports: ["${ADMIN_BIND_ADDR:-127.0.0.1}:${REMEDIATION_PORT:-8090}:8000"]
+    ports: ["${ADMIN_BIND_ADDR:-127.0.0.1}:${REMEDIATION_PORT:-18090}:8000"]
     networks: [monitoring, control, mgmt]
     depends_on: [docker-proxy]
     labels: { resilience.tier: control }
@@ -528,3 +533,59 @@ services:
     depends_on: [wazuh.manager, logshipper]
     labels: { resilience.tier: siem }
     deploy: { resources: { limits: { memory: 256m, cpus: "0.5" } } }
+
+  # ===========================================================================
+  #  GESTION DES SECRETS — HashiCorp Vault
+  #  Vault est la SOURCE DE VÉRITÉ des secrets de la plateforme (KV v2 « resilience/ »).
+  #  Ansible y range les secrets générés, et reconstruit ./secrets/ depuis Vault si le dossier
+  #  est perdu (PRA). Les conteneurs lisent toujours des Docker secrets (cache dérivé).
+  #  Vault est joignable depuis le PC Hôte uniquement (UI : http://127.0.0.1:8200).
+  # ===========================================================================
+  vault:
+    image: hashicorp/vault:1.20
+    restart: unless-stopped
+    logging: *logging
+    command: ["server"]            # l'entrypoint de l'image ajoute -config=/vault/config
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE, FOWNER]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      VAULT_ADDR: http://127.0.0.1:8200
+      SKIP_SETCAP: "true"        # pas de setcap(IPC_LOCK) : disable_mlock est actif
+    volumes:
+      - ./infra/vault/config.hcl:/vault/config/config.hcl:ro
+      - vault-data:/vault/file
+    ports: ["${ADMIN_BIND_ADDR:-127.0.0.1}:${VAULT_PORT:-18200}:8200"]
+    networks: [vault, mgmt, monitoring]
+    labels: { resilience.tier: secrets }
+    healthcheck:
+      # sain même scellé (sealedcode/uninitcode=200) : le descellement est fait par le sidecar
+      test: ["CMD-SHELL", "wget -qO- 'http://127.0.0.1:8200/v1/sys/health?sealedcode=200&uninitcode=200' >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy: { resources: { limits: { memory: 256m, cpus: "0.5" } } }
+
+  vault-unsealer:
+    image: hashicorp/vault:1.20
+    restart: unless-stopped
+    logging: *logging
+    entrypoint: ["/bin/sh", "/bootstrap.sh"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      VAULT_ADDR: http://vault:8200
+    volumes:
+      - ./infra/vault/bootstrap.sh:/bootstrap.sh:ro
+      - vault-keys:/vault/keys
+    networks: [vault]
+    depends_on: [vault]
+    labels: { resilience.tier: secrets }
+    healthcheck:
+      # sain uniquement quand Vault est descellé ET configuré (marqueur écrit par le script)
+      test: ["CMD-SHELL", "test -f /vault/keys/.ready && vault status >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+    deploy: { resources: { limits: { memory: 64m, cpus: "0.25" } } }

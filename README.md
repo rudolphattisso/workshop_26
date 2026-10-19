@@ -49,9 +49,10 @@ Durée : ~5 min au premier lancement (téléchargement des images), < 1 min ensu
 |---|---|---|
 | Application (via WAF BunkerWeb) | `http://<IP-hote>/` (ex. `http://192.168.137.1/`) | réseau du hotspot |
 | Grafana | http://127.0.0.1:3000 — dashboard *Resilience-Alpha* (métriques, logs, alertes, **section SIEM Wazuh**) | local uniquement |
+| Vault (secrets) | http://127.0.0.1:18200 — jeton : `docker exec resilience-vault-unsealer-1 cat /vault/keys/root_token` | local uniquement |
 | Prometheus | http://127.0.0.1:9090 | local uniquement |
 | Alertmanager | http://127.0.0.1:9093 | local uniquement |
-| Moteur de remédiation (événements) | http://127.0.0.1:8090/events | local uniquement |
+| Moteur de remédiation (événements) | http://127.0.0.1:18090/events | local uniquement |
 
 Identifiants : `type secrets\grafana_admin_password` (Grafana `admin`), `type secrets\demo_user_password`
 (utilisateur fictif `alice`). Wazuh n'a pas d'interface propre : ses alertes sont dans Grafana.

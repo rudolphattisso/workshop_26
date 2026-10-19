@@ -103,7 +103,7 @@ class Page:
 
 
 # =========================================================================== PAGE 1
-p1 = Page("1 - Architecture", 1820, 1420)
+p1 = Page("1 - Architecture", 1820, 1600)
 p1.text(20, 5, 1400, 30, "<font style='font-size:20px'><b>PROJECT RESILIENCE-ALPHA</b> — Architecture de déploiement"
         " (Docker Compose + Ansible)</font>")
 
@@ -116,12 +116,12 @@ jury = p1.box(20, 250, 220, 70, "<b>Jury / navigateur</b><br><font style='font-s
 ia = p1.box(20, 560, 220, 120, "<b>PC IA (optionnel)</b><br>192.168.137.y<br><font style='font-size:9px'>"
             "Ollama (LLM ≤ 8B) :11434<br>Assistant RAG LangChain<br>aucun accès au plan de contrôle</font>",
             "#ffffff", "#9673a6", "dashed=1;strokeWidth=2;")
-p1.box(262, 60, 36, 1300, "Point d'accès mobile Windows « RESILIENCE-G&lt;n&gt; » — 192.168.137.0/24",
+p1.box(262, 60, 36, 1480, "Point d'accès mobile Windows « RESILIENCE-G&lt;n&gt; » — 192.168.137.0/24",
        "#eeeeee", "#999999", "horizontal=0;fontStyle=1;rounded=0;")
 
 # PC Hôte
-p1.box(320, 40, 1480, 1340, "<b>PC Hôte — 192.168.137.1</b> · Windows 11 · Docker Desktop (WSL2) · projet Compose "
-       "« resilience » — 21 conteneurs", "#fafafa", "#333333",
+p1.box(320, 40, 1480, 1520, "<b>PC Hôte — 192.168.137.1</b> · Windows 11 · Docker Desktop (WSL2) · projet Compose "
+       "« resilience » — 23 conteneurs", "#fafafa", "#333333",
        "verticalAlign=top;align=left;spacingLeft=10;fontSize=13;strokeWidth=2;arcSize=1;")
 
 # Zones réseau
@@ -155,7 +155,7 @@ pge = p1.svc(760, 710, 180, 100, "postgres-exporter", "rôle exporter (pg_monito
 cad = p1.svc(960, 710, 180, 100, "cAdvisor", "CPU / RAM conteneurs<br>:8080 · privilégié (exception)", "mon")
 
 rem = p1.svc(360, 910, 220, 150, "Moteur de remédiation", "webhook authentifié (Bearer)<br>liste blanche + cooldown<br>"
-             "vérif. par transaction<br>:8000 ← 127.0.0.1:8090<br>monitoring, control, mgmt", "control")
+             "vérif. par transaction<br>:8000 ← 127.0.0.1:18090<br>monitoring, control, mgmt", "control")
 dp = p1.svc(620, 910, 220, 150, "docker-proxy", "HAProxy durci<br>GET /containers<br>POST start/stop/restart SEULS<br>"
             "create/exec/kill → 403", "control")
 dpro = p1.svc(900, 910, 190, 150, "docker-proxy-ro", "GET containers,<br>networks, events<br>POST interdit", "ro")
@@ -167,7 +167,7 @@ p1.svc(1420, 910, 320, 150, "Volumes nommés", "pgdata · prometheus-data · lok
 admin = p1.svc(1420, 130, 320, 80, "Opérateur sur le PC Hôte", "navigateur local", "mgmt")
 ports = p1.svc(1420, 250, 320, 220, "Interfaces d'administration",
                "127.0.0.1:3000 → Grafana<br>127.0.0.1:9090 → Prometheus<br>127.0.0.1:9093 → Alertmanager<br>"
-               "127.0.0.1:8090 → Remédiation (/events)<br><br>"
+               "127.0.0.1:18090 → Remédiation (/events)<br><br>"
                "Base, Loki, Wazuh,<br>exporters, proxies : <b>jamais publiés</b>", "mgmt")
 ans = p1.svc(1420, 570, 320, 240, "Runner Ansible (conteneur éphémère)",
              "scripts/ops.ps1 &lt;action&gt;<br>deploy · verify · backup · restore<br>recover (PRA) · chaos · reload · teardown<br><br>"
@@ -211,6 +211,12 @@ p1.edge(ls, dpro, "F25", "siem", "exitX=0.5;exitY=0;entryX=0.5;entryY=1;")
 p1.edge(ls, wag, "F26", "siem", "exitX=1;exitY=0.5;entryX=0;entryY=0.5;")
 p1.edge(wag, wmgr, "F27", "siem", "exitX=1;exitY=0.5;entryX=0;entryY=0.5;")
 p1.edge(wmgr, alloy, "F28", "siem", "exitX=0.5;exitY=0;entryX=1;entryY=0.3;", [(995, 1195), (1147, 1195), (1147, 600)])
+
+# ---- Vault (secrets) ----
+p1.zone(340, 1390, 1420, 150, "vault · 172.30.100.0/24 · interne   (UI Vault aussi sur mgmt → 127.0.0.1:18200)", "mgmt")
+vlt = p1.svc(360, 1430, 330, 90, "HashiCorp Vault", "KV v2 resilience/ · audit · politiques<br>source de vérité des secrets", "mgmt")
+vun = p1.svc(720, 1430, 330, 90, "vault-unsealer", "init + descellement auto + config<br>(reprise sans humain)", "mgmt")
+p1.edge(vun, vlt, "unseal", "admin", "exitX=0;exitY=0.5;entryX=1;entryY=0.5;")
 
 # Légende
 p1.box(20, 700, 230, 490,
@@ -267,6 +273,8 @@ flows = [
     ("F27", "wazuh-agent", "wazuh.manager", "siem", "TCP 1514 / 1515 (enrôlement)", "Évènements agent (FIM, rootcheck, SCA, logs)", "Agent unique de l'hôte ; ne dé-durcit aucun conteneur applicatif", Sm),
     ("F28", "wazuh.manager", "Alloy", "siem", "UDP 5514 syslog (JSON)", "Alertes Wazuh vers Loki (puis Grafana)", "Réseau interne siem ; Alloy les pousse dans Loki avec service=wazuh", Sm),
     ("F29", "Alloy", "Loki", "monitoring", "TCP 3100 HTTP push", "Alertes Wazuh stockées et interrogeables dans Grafana", "Règles Loki → Alertmanager (WazuhXss/Sqli/Ddos/BruteForce/HighSeverity)", Sm),
+    ("F31", "Ansible (runner)", "Vault", "docker exec via vault-unsealer", "jeton ansible-ops (politique resilience/*)", "Lecture/écriture des secrets de la plateforme", "Politique moindre privilège ; Vault n'est joignable que sur le réseau interne vault + loopback", A),
+    ("F32", "vault-unsealer", "Vault", "vault", "TCP 8200 HTTP", "Initialisation, descellement automatique, configuration", "Réseau interne vault ; clés stockées dans un volume dédié (compromis de lab documenté)", A),
     ("A1", "PC Attaquant", "BunkerWeb (WAF)", "LAN → edge", "TCP 80 HTTP", "Attaques XSS / SQLi / DDoS (démo)", "Bloquées (403) ou limitées/bannies (429→403) ; Wazuh lève les alertes 1001xx", Atk),
 ]
 end = p2.table(20, 60, cols, [list(f[:7]) for f in flows], row_h=46, fills=[f[7] + "33" for f in flows])
@@ -290,7 +298,7 @@ p3 = Page("3 - Inventaire serveurs", 1760, 1480)
 p3.text(20, 10, 1600, 30, "<font style='font-size:20px'><b>Inventaire</b> — machines physiques et conteneurs</font>")
 mcols = [("Machine", 150), ("Adresse", 170), ("Système", 260), ("Ressources", 250), ("Rôle", 330), ("Exposition", 330)]
 machines = [
-    ["PC Hôte", "192.168.137.1 (hotspot)", "Windows 11 · Docker Desktop 29 (WSL2)", "4+ cœurs · 16 Go (6–8 Go pour Docker) · 50 Go SSD", "Exécute les 21 conteneurs + runner Ansible", "80/tcp sur le hotspot ; admin sur 127.0.0.1"],
+    ["PC Hôte", "192.168.137.1 (hotspot)", "Windows 11 · Docker Desktop 29 (WSL2)", "4+ cœurs · 16 Go (6–8 Go pour Docker) · 50 Go SSD", "Exécute les 23 conteneurs + runner Ansible", "80/tcp sur le hotspot ; admin sur 127.0.0.1"],
     ["PC Attaquant", "192.168.137.x (DHCP)", "Kali Linux / outils Red Team", "8–16 Go RAM", "Scénarios offensifs depuis un poste distinct", "Aucune ; cible autorisée = 192.168.137.1:80"],
     ["PC IA (déporté)", "192.168.137.y (DHCP)", "Windows / Linux · Ollama", "16 Go RAM, GPU conseillé", "LLM ≤ 8B + RAG LangChain — déporté pour libérer la RAM du PC Hôte", "11434/tcp vers le PC Hôte uniquement"],
 ]
@@ -314,10 +322,12 @@ containers = [
     ["postgres-exporter", "prometheuscommunity/postgres-exporter:v0.17.1", "Métriques BDD", "9187", "—", "data, monitoring", "nobody", "64 Mo", "rôle pg_monitor"],
     ["cadvisor", "gcr.io/cadvisor/cadvisor:v0.55.1", "Métriques conteneurs", "8080", "—", "monitoring", "root", "256 Mo", "privilégié (exception documentée)"],
     ["txprobe", "resilience/txprobe (python 3.12)", "Transaction synthétique", "8000", "—", "app, monitoring", "10001", "128 Mo", "FS lecture seule"],
-    ["remediation", "resilience/remediation (python 3.12)", "Moteur de remédiation", "8000", "127.0.0.1:8090", "monitoring, control, mgmt", "10001", "128 Mo", "liste blanche, jeton, via proxy"],
+    ["remediation", "resilience/remediation (python 3.12)", "Moteur de remédiation", "8000", "127.0.0.1:18090", "monitoring, control, mgmt", "10001", "128 Mo", "liste blanche, jeton, via proxy"],
     ["logshipper", "resilience/logshipper (python 3.12)", "Forwarder logs -> Wazuh", "—", "—", "dockerapi-ro", "root", "96 Mo", "FS lecture seule, Docker en lecture seule"],
     ["wazuh-agent", "wazuh/wazuh-agent:4.14.9", "Agent SIEM unique (FIM/SCA)", "—", "—", "siem", "root", "256 Mo", "lecture seule des secrets/configs"],
     ["wazuh.manager", "wazuh/wazuh-manager:4.14.9", "SIEM — règles de détection (sans indexer ni UI)", "1514/1515", "—", "siem", "wazuh", "1 Go", "réseau interne ; alertes → Alloy (syslog)"],
+    ["vault", "hashicorp/vault:1.20", "Secrets — source de vérité", "8200", "127.0.0.1:18200", "vault, mgmt, monitoring", "vault", "256 Mo", "cap_drop ALL (+ minimales), no-new-privileges"],
+    ["vault-unsealer", "hashicorp/vault:1.20", "Descellement automatique", "—", "—", "vault", "root", "64 Mo", "cap_drop ALL ; réseau interne"],
     ["docker-proxy", "tecnativa/docker-socket-proxy:v0.4.2", "API Docker filtrée (rw)", "2375", "—", "control", "haproxy", "64 Mo", "HAProxy durci : start/stop/restart"],
     ["docker-proxy-ro", "tecnativa/docker-socket-proxy:v0.4.2", "API Docker lecture seule", "2375", "—", "dockerapi-ro", "haproxy", "64 Mo", "POST interdit"],
 ]

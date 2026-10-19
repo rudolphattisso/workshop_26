@@ -1,0 +1,6 @@
+# HashiCorp Vault démarre EN PREMIER : il ne dépend d'aucun Docker secret, et les autres
+# tâches (secrets.yml) y lisent / y écrivent les secrets de la plateforme.
+- name: "Vault | Démarrer Vault et son sidecar de descellement (attente : descellé + configuré)"
+  ansible.builtin.command: "{{ compose }} up -d --wait --wait-timeout 180 vault vault-unsealer"
+  register: vault_up
+  changed_when: "'Started' in vault_up.stderr or 'Created' in vault_up.stderr or 'Recreated' in vault_up.stderr"

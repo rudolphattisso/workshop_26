@@ -70,6 +70,9 @@ scrape_configs:
         labels: { service: payment-api }
       - targets: ["http://bunkerweb:8080/api/auth/ready"]
         labels: { service: auth }
+      # Vault : 200 = actif et descellé ; 503 = scellé ; pas de réponse = arrêté
+      - targets: ["http://vault:8200/v1/sys/health"]
+        labels: { service: vault }
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target

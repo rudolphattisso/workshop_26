@@ -20,7 +20,7 @@
 │                Prometheus/Loki rules ─► Alertmanager ─► Moteur de remédiation           │
 │                                                              │                          │
 │  [control]                         proxy Docker (restart/start/stop uniquement)        │
-│  [mgmt]  Grafana :3000, Prometheus :9090, Alertmanager :9093, remédiation :8090         │
+│  [mgmt]  Grafana :3000, Prometheus :9090, Alertmanager :9093, remédiation :18090        │
 │          publiés sur 127.0.0.1 seulement                                                │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -33,6 +33,7 @@
 | **Docker Compose** | *Quel est l'état désiré de la plateforme ?* | Décrit de façon déclarative les 21 conteneurs, 9 réseaux, volumes, secrets, healthchecks, politiques de redémarrage | N'opère rien dans le temps (pas de sauvegarde, pas de vérification métier, pas de PRA) |
 | **Ansible** | *Comment opère-t-on la plateforme de façon reproductible ?* | Procédures codées et idempotentes : préflight, génération des secrets, validation des configs, déploiement, vérification fonctionnelle, sauvegarde, restauration, **PRA**, recette chaos | N'est pas dans la boucle de remédiation temps réel (trop lent, trop privilégié) |
 | **BunkerWeb** (WAF) | *Comment filtrer le trafic entrant ?* | Point d'entrée unique : nginx + ModSecurity + OWASP CRS v4 (bloque XSS/SQLi), limitation de débit et **bannissement automatique** des IP « bad behavior » (anti-DoS), reverse proxy vers les microservices | Export Prometheus = option PRO → supervision via blackbox + Loki |
+| **HashiCorp Vault** | *Où vivent les secrets ?* | **Source de vérité** des 9 secrets de la plateforme (KV v2 `resilience/`), audit activé, politiques moindre privilège ; Ansible y range les secrets et reconstruit `./secrets/` depuis Vault (PRA) ; descellement automatique après un redémarrage | Les conteneurs lisent toujours des Docker secrets (copie d'exécution) : Vault ne sert pas de runtime en ligne aux services |
 | **Prometheus** | *Dans quel état sont les services ?* | Scrape toutes les 5 s : métriques applicatives, sondes boîte noire via le WAF, conteneurs, base ; évalue les règles d'alerte | — |
 | **Loki + Alloy** | *Que s'est-il passé ?* | Centralise les journaux stdout de **tous** les conteneurs (découverte automatique), règles LogQL de sécurité (fonction SOC légère) | Pas d'Elastic : Loki n'indexe que les labels → ~10× moins de RAM |
 | **Wazuh** (SIEM/HIDS) | *Quelles menaces de sécurité ?* | Moteur de détection : un agent surveille toute la plateforme (FIM, rootcheck, SCA, analyse des journaux) ; le manager applique des règles XSS/SQLi/DDoS/force brute et **envoie ses alertes en syslog JSON vers Loki** → visualisées et alertées dans **Grafana** | Pas de dashboard ni d'indexer Wazuh (OpenSearch = Elastic, écarté par le sujet) : un seul outil de visualisation |
@@ -103,6 +104,7 @@ l'agent analyse. Les conteneurs applicatifs restent intacts (non-root, FS en lec
 | `dockerapi-ro` | oui | alloy, logshipper, docker-proxy-ro | lecture des logs/API Docker |
 | `mgmt` | non | grafana, prometheus, alertmanager, remediation | publication sur 127.0.0.1 |
 | `bw-universe` | oui | bunkerweb, bunkerweb-scheduler | plan de contrôle du WAF (API interne) |
+| `vault` | oui | vault, vault-unsealer | Vault et son sidecar de descellement (+ vault sur `mgmt` pour l'UI loopback) |
 | `siem` | oui | wazuh.manager, wazuh-agent, alloy | SIEM Wazuh (agent → manager ; alertes du manager → Alloy → Loki) |
 
 Un réseau `internal` n'a **aucune route vers l'extérieur** : un service applicatif compromis
@@ -114,8 +116,8 @@ ne peut ni télécharger d'outil ni exfiltrer directement des données vers Inte
 - **Conteneurs** : `cap_drop: ALL`, `no-new-privileges`, utilisateurs non-root (uid 10001, postgres uid 70),
   système de fichiers **en lecture seule** pour les services applicatifs et la base, limites mémoire/CPU
   (protection contre l'épuisement de ressources pendant un DoS).
-- **Secrets** : Docker secrets (fichiers montés dans `/run/secrets`), générés par Ansible, jamais dans
-  les images, les variables d'environnement ni le dépôt.
+- **Secrets** : **HashiCorp Vault** est la source de vérité (KV v2, audit stdout, jeton Ansible à politique restreinte) ;
+  ils sont déclinés en Docker secrets (`/run/secrets`), jamais dans les images, variables d'environnement ni le dépôt.
 - **Base** : un rôle par service (`payment_svc` : SELECT/INSERT sur `transactions` ; `auth_svc` : SELECT sur
   `users` ; `exporter` : `pg_monitor`). Mots de passe applicatifs hachés en bcrypt.
 - **Moteur de remédiation** : jamais d'accès direct au socket Docker. Le proxy n'autorise que
@@ -190,3 +192,25 @@ déporté sur le 3e poste. Les rapports détaillés des essais `chaos` sont dans
   métrique par conteneur.
 - **Mono-hôte** : pas de haute disponibilité réelle (un seul PC). La reprise couvre la panne
   d'un service, pas celle de la machine (→ PROC-01 + sauvegarde copiée hors du PC).
+
+## 9. Gestion des secrets : HashiCorp Vault
+
+**Rôle.** Vault est la source de vérité ; `./secrets/` n'est qu'une copie d'exécution pour Docker.
+`ops deploy` réconcilie chaque secret (voir `ansible/tasks/secrets.yml`) : généré s'il n'existe nulle
+part ; versé dans Vault s'il n'existe qu'en fichier (migration, valeur conservée) ; **reconstruit depuis
+Vault si le fichier est perdu** (PRA) ; Vault l'emporte en cas d'écart.
+
+**Reprise sans humain.** Le sidecar `vault-unsealer` initialise Vault au premier démarrage, le descelle
+à chaque redémarrage et (re)configure moteur KV, audit et politiques (`infra/vault/bootstrap.sh`).
+Mesuré : Vault tué (SIGKILL) → redescellé automatiquement en quelques secondes. Si Vault ne répond
+plus, l'alerte `VaultDown` déclenche son redémarrage par le moteur de remédiation ; `VaultSealed` et
+`VaultAccessDenied` (audit) alertent dans Grafana.
+
+**Moindre privilège.** Le jeton d'exploitation `ansible-ops` ne lit/écrit que `resilience/*` : il ne peut
+ni lister les politiques ni les moteurs de secrets. Vault n'est joignable que sur le réseau interne `vault`
+et en loopback (`http://127.0.0.1:18200`).
+
+**Compromis de lab, à dire au jury.** Les clés de descellement et le jeton racine sont stockés dans un
+volume à côté de Vault (sinon pas de reprise autonome). En production : auto-unseal via KMS/HSM ou clés
+Shamir réparties, TLS, stockage Raft en haute disponibilité, jeton racine révoqué après initialisation.
+Le TLS est désactivé car Vault n'est joignable que sur des réseaux internes et en loopback.

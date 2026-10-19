@@ -43,6 +43,14 @@ groups:
         annotations:
           summary: "Plus de 10 échecs de connexion en 1 min (force brute probable)"
 
+      # --- Vault : accès refusé dans le journal d'audit (jeton invalide / politique violée) ---
+      - alert: VaultAccessDenied
+        expr: sum(count_over_time({service="vault"} |= "permission denied" [1m])) > 0
+        for: 0s
+        labels: { severity: major, remediation: none, source: vault }
+        annotations:
+          summary: "Vault : tentative d'accès refusée (permission denied) dans l'audit"
+
       # --- Échec de remédiation : nécessite une intervention humaine (PRA) ---
       - alert: RemediationFailed
         expr: sum(count_over_time({service="remediation"} |= "remediation_failed" [5m])) > 0

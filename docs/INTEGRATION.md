@@ -40,7 +40,7 @@ Toute autre route sous `/api/` renvoie 404. Pour en ajouter : `infra/waf/default
 - Chaque alerte porte `labels.remediation` (`restart` | `none`) et `labels.target` (service Compose).
 - **Accès Docker** : uniquement via `http://docker-proxy:2375` (API Docker restreinte :
   lecture des conteneurs, `start`/`stop`/`restart`).
-- **Sortie pour le dashboard React** : `GET http://127.0.0.1:8090/events` (JSON, plus récent d'abord) —
+- **Sortie pour le dashboard React** : `GET http://127.0.0.1:18090/events` (JSON, plus récent d'abord) —
   types `alert_received`, `remediation_started`, `remediation_action_done`, `remediation_succeeded`,
   `remediation_failed`, `remediation_refused`, `remediation_skipped`.
 - **Vérification métier** : `GET http://txprobe:8000/check` exécute une transaction complète et

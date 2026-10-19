@@ -36,7 +36,7 @@ Les conteneurs ont `restart: unless-stopped` : ils redémarrent avec Docker Desk
 ou `PostgresDown` ; panneau « Transaction synthétique » rouge.
 **Réponse automatique** : le moteur de remédiation redémarre le service visé (liste blanche),
 puis attend une transaction synthétique réussie. Rien à faire si l'événement
-`remediation_succeeded` apparaît (http://127.0.0.1:8090/events ou panneau « Journal du moteur »).
+`remediation_succeeded` apparaît (http://127.0.0.1:18090/events ou panneau « Journal du moteur »).
 **Si la remédiation échoue** (`remediation_failed`, alerte `RemediationFailed`) :
 1. Logs du service : Grafana → Explore → Loki → `{service="payment-api"}`.
 2. `docker compose ps` pour l'état, `docker compose logs --tail 100 <service>`.
@@ -127,3 +127,12 @@ Le playbook vérifie l'état initial, injecte la panne, mesure le délai de **d�
 | Perte du PC Hôte | PROC-01 sur un autre PC + restauration d'une sauvegarde copiée | < 30 min | dernière sauvegarde copiée hors du PC |
 
 Les durées réellement mesurées sont dans `reports\` (playbook `chaos`) et dans la sortie de `recover`.
+
+## PROC-12 — Vault scellé ou indisponible
+**Symptômes** : alerte `VaultDown` / `VaultSealed`, `http://127.0.0.1:18200` ne répond pas.
+**Réponse automatique** : `VaultDown` → redémarrage par le moteur de remédiation ; le sidecar
+`vault-unsealer` redescelle ensuite seul. Les services en cours **ne sont pas affectés** (ils lisent leurs Docker secrets).
+**Si Vault reste scellé** : `docker logs resilience-vault-unsealer-1` puis `docker compose restart vault-unsealer`.
+**Perte du dossier `secrets/`** : `.\scripts\ops.ps1 deploy` le reconstruit depuis Vault (les valeurs sont conservées).
+**Perte du volume Vault** : les secrets sont régénérés au prochain `deploy` ; les mots de passe de la base ne
+correspondent plus → `.\scripts\ops.ps1 recover -e wipe_data=true` (restaure ensuite depuis une sauvegarde).
