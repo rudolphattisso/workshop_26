@@ -52,7 +52,7 @@ networks:
   bw-universe:  # plan de contrôle BunkerWeb : scheduler <-> instance (API interne)
     internal: true
     ipam: { config: [{ subnet: 172.30.80.0/24 }] }
-  siem:         # Wazuh : manager <-> indexer <-> dashboard, et agents -> manager (1514/1515)
+  siem:         # Wazuh : agent -> manager (1514/1515) ; alertes du manager -> Alloy (syslog UDP 5514)
     internal: true
     ipam: { config: [{ subnet: 172.30.90.0/24 }] }
 
@@ -73,11 +73,6 @@ volumes:
   wazuh_active_response:
   wazuh_agentless:
   wazuh_wodles:
-  filebeat_etc:
-  filebeat_var:
-  wazuh-indexer-data:
-  wazuh-dashboard-config:
-  wazuh-dashboard-custom:
   agent-logs:
 
 # -----------------------------------------------------------------------------
@@ -165,6 +160,14 @@ services:
       - bw-data:/data
     networks: [bw-universe]
     depends_on: [bunkerweb]
+    # Démarrage à froid long (téléchargement du CRS + génération de conf, ~2-3 min) : on laisse
+    # un délai avant de compter les échecs, sinon « compose --wait » échoue à tort.
+    healthcheck:
+      test: ["CMD-SHELL", "/usr/share/bunkerweb/helpers/healthcheck-scheduler.sh"]
+      interval: 10s
+      timeout: 10s
+      start_period: 300s
+      retries: 6
     labels: { resilience.tier: edge }
     deploy: { resources: { limits: { memory: 384m, cpus: "1.0" } } }
 
@@ -303,7 +306,7 @@ services:
     volumes:
       - ./infra/alloy/config.alloy:/etc/alloy/config.alloy:ro
       - alloy-data:/var/lib/alloy
-    networks: [monitoring, dockerapi-ro]
+    networks: [monitoring, dockerapi-ro, siem]   # siem : réception des alertes Wazuh (syslog)
     depends_on: [loki, docker-proxy-ro]
     labels: { resilience.tier: observability }
     deploy: { resources: { limits: { memory: 256m, cpus: "0.5" } } }
@@ -451,12 +454,11 @@ services:
     deploy: { resources: { limits: { memory: 64m, cpus: "0.25" } } }
 
   # ===========================================================================
-  #  SIEM — Wazuh (manager + indexer OpenSearch + dashboard)
-  #  Plan de sécurité : reçoit les évènements des agents (un par conteneur applicatif),
-  #  corrèle via les règles Wazuh, indexe dans OpenSearch, visualise dans le dashboard.
-  #  Réseau 'siem' interne ; dashboard publié sur 127.0.0.1 uniquement.
-  #  Certificats générés par Ansible (tasks/wazuh_certs.yml) dans infra/wazuh/config/
-  #  wazuh_indexer_ssl_certs/ (non versionnés).
+  #  SIEM — Wazuh (manager + agent), SANS indexer ni dashboard
+  #  Le manager corrèle les évènements de l'agent avec les règles de détection (XSS, SQLi,
+  #  DDoS, force brute), puis envoie ses alertes en syslog JSON vers Alloy -> Loki.
+  #  La visualisation et les alertes se font dans Grafana (un seul outil pour tout).
+  #  Réseau 'siem' interne ; aucun port publié.
   # ===========================================================================
   wazuh.manager:
     image: wazuh/wazuh-manager:4.14.9
@@ -466,16 +468,6 @@ services:
     ulimits:
       memlock: { soft: -1, hard: -1 }
       nofile: { soft: 655360, hard: 655360 }
-    environment:
-      INDEXER_URL: https://wazuh.indexer:9200
-      INDEXER_USERNAME: admin
-      INDEXER_PASSWORD: ${WAZUH_INDEXER_PASSWORD:?défini par ops deploy dans .env}
-      FILEBEAT_SSL_VERIFICATION_MODE: full
-      SSL_CERTIFICATE_AUTHORITIES: /etc/ssl/root-ca.pem
-      SSL_CERTIFICATE: /etc/ssl/filebeat.pem
-      SSL_KEY: /etc/ssl/filebeat.key
-      API_USERNAME: wazuh-wui
-      API_PASSWORD: ${WAZUH_API_PASSWORD:?défini par ops deploy dans .env}
     volumes:
       - wazuh_api_configuration:/var/ossec/api/configuration
       - wazuh_etc:/var/ossec/etc
@@ -486,74 +478,16 @@ services:
       - wazuh_active_response:/var/ossec/active-response/bin
       - wazuh_agentless:/var/ossec/agentless
       - wazuh_wodles:/var/ossec/wodles
-      - filebeat_etc:/etc/filebeat
-      - filebeat_var:/var/lib/filebeat
-      - ./infra/wazuh/config/wazuh_indexer_ssl_certs/root-ca-manager.pem:/etc/ssl/root-ca.pem:ro
-      - ./infra/wazuh/config/wazuh_indexer_ssl_certs/wazuh.manager.pem:/etc/ssl/filebeat.pem:ro
-      - ./infra/wazuh/config/wazuh_indexer_ssl_certs/wazuh.manager-key.pem:/etc/ssl/filebeat.key:ro
       - ./infra/wazuh/config/wazuh_cluster/wazuh_manager.conf:/wazuh-config-mount/etc/ossec.conf:ro
       - ./infra/wazuh/config/wazuh_cluster/local_rules.xml:/wazuh-config-mount/etc/rules/local_rules.xml:ro
+      - ./infra/wazuh/config/wazuh_cluster/filebeat-disabled.sh:/etc/services.d/filebeat/run:ro   # pas d'indexer : filebeat inutile
     networks:
       siem:
         aliases: [wazuh.manager]
     labels: { resilience.tier: siem }
     deploy: { resources: { limits: { memory: 1g, cpus: "1.5" } } }
 
-  wazuh.indexer:
-    image: wazuh/wazuh-indexer:4.14.9
-    hostname: wazuh.indexer
-    restart: unless-stopped
-    logging: *logging
-    environment:
-      OPENSEARCH_JAVA_OPTS: "-Xms${WAZUH_INDEXER_HEAP:-1g} -Xmx${WAZUH_INDEXER_HEAP:-1g}"
-    ulimits:
-      memlock: { soft: -1, hard: -1 }
-      nofile: { soft: 65536, hard: 65536 }
-    volumes:
-      - wazuh-indexer-data:/var/lib/wazuh-indexer
-      - ./infra/wazuh/config/wazuh_indexer_ssl_certs/root-ca.pem:/usr/share/wazuh-indexer/config/certs/root-ca.pem:ro
-      - ./infra/wazuh/config/wazuh_indexer_ssl_certs/wazuh.indexer-key.pem:/usr/share/wazuh-indexer/config/certs/wazuh.indexer.key:ro
-      - ./infra/wazuh/config/wazuh_indexer_ssl_certs/wazuh.indexer.pem:/usr/share/wazuh-indexer/config/certs/wazuh.indexer.pem:ro
-      - ./infra/wazuh/config/wazuh_indexer_ssl_certs/admin.pem:/usr/share/wazuh-indexer/config/certs/admin.pem:ro
-      - ./infra/wazuh/config/wazuh_indexer_ssl_certs/admin-key.pem:/usr/share/wazuh-indexer/config/certs/admin-key.pem:ro
-      - ./infra/wazuh/config/wazuh_indexer/wazuh.indexer.yml:/usr/share/wazuh-indexer/config/opensearch.yml:ro
-      - ./infra/wazuh/config/wazuh_indexer/internal_users.yml:/usr/share/wazuh-indexer/config/opensearch-security/internal_users.yml:ro
-    networks:
-      siem:
-        aliases: [wazuh.indexer]
-    labels: { resilience.tier: siem }
-    deploy: { resources: { limits: { memory: 2g, cpus: "2.0" } } }
 
-  wazuh.dashboard:
-    image: wazuh/wazuh-dashboard:4.14.9
-    hostname: wazuh.dashboard
-    restart: unless-stopped
-    logging: *logging
-    ports:
-      - "${ADMIN_BIND_ADDR:-127.0.0.1}:${WAZUH_DASHBOARD_PORT:-8443}:5601"
-    environment:
-      INDEXER_USERNAME: admin
-      INDEXER_PASSWORD: ${WAZUH_INDEXER_PASSWORD:?défini par ops deploy dans .env}
-      WAZUH_API_URL: https://wazuh.manager
-      DASHBOARD_USERNAME: kibanaserver
-      DASHBOARD_PASSWORD: ${WAZUH_DASHBOARD_PASSWORD:?défini par ops deploy dans .env}
-      API_USERNAME: wazuh-wui
-      API_PASSWORD: ${WAZUH_API_PASSWORD:?défini par ops deploy dans .env}
-    volumes:
-      - ./infra/wazuh/config/wazuh_indexer_ssl_certs/wazuh.dashboard.pem:/usr/share/wazuh-dashboard/certs/wazuh-dashboard.pem:ro
-      - ./infra/wazuh/config/wazuh_indexer_ssl_certs/wazuh.dashboard-key.pem:/usr/share/wazuh-dashboard/certs/wazuh-dashboard-key.pem:ro
-      - ./infra/wazuh/config/wazuh_indexer_ssl_certs/root-ca.pem:/usr/share/wazuh-dashboard/certs/root-ca.pem:ro
-      - ./infra/wazuh/config/wazuh_dashboard/opensearch_dashboards.yml:/usr/share/wazuh-dashboard/config/opensearch_dashboards.yml:ro
-      - ./infra/wazuh/config/wazuh_dashboard/wazuh.yml:/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml:ro
-      - wazuh-dashboard-config:/usr/share/wazuh-dashboard/data/wazuh/config
-      - wazuh-dashboard-custom:/usr/share/wazuh-dashboard/plugins/wazuh/public/assets/custom
-    networks:
-      siem:
-        aliases: [wazuh.dashboard]
-      mgmt:
-    depends_on: [wazuh.indexer, wazuh.manager]
-    labels: { resilience.tier: siem }
-    deploy: { resources: { limits: { memory: 1g, cpus: "1.0" } } }
 
   # Log-forwarder : alimente l'agent Wazuh avec les journaux des conteneurs (voir services/logshipper)
   logshipper:

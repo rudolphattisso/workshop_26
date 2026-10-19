@@ -43,11 +43,11 @@ puis attend une transaction synthétique réussie. Rien à faire si l'événemen
 3. Reconstruction : `.\scripts\ops.ps1 recover`.
 
 ## PROC-05 — Attaque applicative (XSS / SQLi) détectée par le WAF
-**Symptômes** : alertes Loki `XssAttackDetected` / `WafAttackBlocked` ; **Wazuh** : règles 100101
+**Symptômes** : alertes `XssAttackDetected` / `WafAttackBlocked` / `WazuhXssDetected` dans Grafana ; **Wazuh** : règles 100101
 (XSS), 100102 (SQLi), 100103 (campagne) ; panneau « Sécurité » de Grafana en hausse.
 **Réponse automatique** : BunkerWeb (ModSecurity + OWASP CRS v4) bloque les requêtes (HTTP 403).
 **Investigation** :
-1. Wazuh (`https://127.0.0.1:8443`, *Threat Hunting*) : filtrer `rule.id:100101 OR rule.id:100102`.
+1. Grafana → section **SIEM Wazuh** (ou Explore/Loki) : `{service="wazuh"} | json | rule_id=~"100101|100102"`.
 2. Loki/Grafana : `{service="bunkerweb"} |= "ModSecurity: Access denied"` (IP source, URI, règle CRS).
 3. Vérifier qu'aucune charge n'a abouti (2xx) : `{service="bunkerweb"} |~ "attack-xss|attack-sqli"`.
    Si une requête malveillante a reçu un 2xx → traiter comme une **compromission** (PROC-07).
@@ -70,13 +70,14 @@ DEMO_PASSWORD=<mdp alice> ./attack/run_demo.sh http://192.168.137.1
 Démo « avant/après » du WAF : `WAF_RULE_ENGINE=DetectionOnly` dans `.env` + `ops reload` (les XSS
 passent mais sont journalisées), puis `=On` + `ops reload` (les XSS sont bloquées).
 
-## PROC-05ter — SIEM Wazuh indisponible
-**Symptômes** : dashboard `https://127.0.0.1:8443` injoignable, ou agent inactif.
-1. État : `docker compose ps wazuh.indexer wazuh.manager wazuh.dashboard wazuh-agent logshipper`.
-2. Indexer non « green » : souvent la RAM — vérifier `WAZUH_INDEXER_HEAP` (≥ 512m) et la mémoire Docker.
-3. Agent inactif : `docker exec resilience-wazuh.manager-1 /var/ossec/bin/agent_control -l`.
-4. Pas de nouvelles alertes : vérifier que `logshipper` écrit (`docker logs resilience-logshipper-1`).
-5. Le SIEM est hors de la boucle de remédiation : son indisponibilité ne bloque pas le service métier.
+## PROC-05ter — SIEM Wazuh : plus d'alertes dans Grafana
+**Symptômes** : la section « SIEM Wazuh » du dashboard reste vide malgré une attaque.
+1. État : `docker compose ps wazuh.manager wazuh-agent logshipper alloy`.
+2. Agent inactif : `docker exec resilience-wazuh.manager-1 /var/ossec/bin/agent_control -l`.
+3. Le forwarder écrit-il ? `docker logs resilience-logshipper-1`.
+4. Le manager émet-il ? `docker exec resilience-wazuh.manager-1 /var/ossec/bin/wazuh-control status | grep csyslogd` (doit tourner).
+5. Test d'une règle : `echo '<ligne de log>' | docker exec -i resilience-wazuh.manager-1 /var/ossec/bin/wazuh-logtest`.
+6. Le SIEM est hors de la boucle de remédiation : son indisponibilité ne bloque pas le service métier.
 
 ## PROC-07 — Compromission suspectée (conteneur ou données altérés)
 Un redémarrage **ne suffit pas** : il faut repartir d'un état sain connu.

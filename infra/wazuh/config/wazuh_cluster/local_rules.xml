@@ -35,15 +35,18 @@
   </rule>
 
   <!-- Bannissement automatique d'IP par BunkerWeb (réponse au bad-behavior / flood) -->
+  <!-- Les lignes nginx-errorlog sont d'abord prises par les règles Nginx (31302...) :
+       on s'y accroche en règle enfant, sinon notre règle n'est jamais évaluée. -->
   <rule id="100110" level="10">
-    <match>BADBEHAVIOR</match>
-    <regex>banned IP</regex>
+    <if_sid>31301, 31302, 31303</if_sid>
+    <match>is banned with reason bad behavior</match>
     <description>WAF BunkerWeb : IP bannie automatiquement (bad behavior / flood / DDoS)</description>
     <group>attack,ddos,</group>
   </rule>
 
   <!-- Compteur bad-behavior (une requête "mauvaise" de plus pour une IP) -->
   <rule id="100111" level="4">
+    <if_sid>31300, 31301, 31302</if_sid>
     <match>BADBEHAVIOR] increased counter</match>
     <description>WAF BunkerWeb : requête anormale comptabilisée (bad behavior)</description>
     <group>attack,</group>

@@ -50,3 +50,42 @@ groups:
         labels: { severity: critical, remediation: none, source: loki }
         annotations:
           summary: "Une remédiation automatique a échoué : intervention humaine requise (PRA)"
+
+  # --- SIEM Wazuh : alertes du moteur de détection (manager -> syslog -> Alloy -> Loki) ---
+  # Visualisées et alertées dans Grafana ; pas de dashboard Wazuh.
+  - name: wazuh-siem
+    rules:
+      - alert: WazuhXssDetected
+        expr: sum(count_over_time({service="wazuh"} | json | rule_id="100101" [1m])) > 0
+        for: 0s
+        labels: { severity: major, remediation: none, source: wazuh, kind: xss }
+        annotations:
+          summary: "Wazuh : injection XSS détectée (règle 100101)"
+
+      - alert: WazuhSqliDetected
+        expr: sum(count_over_time({service="wazuh"} | json | rule_id="100102" [1m])) > 0
+        for: 0s
+        labels: { severity: major, remediation: none, source: wazuh, kind: sqli }
+        annotations:
+          summary: "Wazuh : injection SQL détectée (règle 100102)"
+
+      - alert: WazuhDdosDetected
+        expr: sum(count_over_time({service="wazuh"} | json | rule_id=~"100110|100112" [1m])) > 0
+        for: 0s
+        labels: { severity: critical, remediation: none, source: wazuh, kind: ddos }
+        annotations:
+          summary: "Wazuh : DDoS applicatif détecté (règles 100110/100112)"
+
+      - alert: WazuhBruteForceDetected
+        expr: sum(count_over_time({service="wazuh"} | json | rule_id="100201" [1m])) > 0
+        for: 0s
+        labels: { severity: major, remediation: none, source: wazuh, kind: bruteforce }
+        annotations:
+          summary: "Wazuh : force brute sur l'authentification (règle 100201)"
+
+      - alert: WazuhHighSeverity
+        expr: sum(count_over_time({service="wazuh"} | json | rule_level >= 12 [1m])) > 0
+        for: 0s
+        labels: { severity: critical, remediation: none, source: wazuh }
+        annotations:
+          summary: "Wazuh : alerte de niveau >= 12 (campagne d'attaque ou remédiation en échec)"

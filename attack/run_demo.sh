@@ -13,7 +13,7 @@ echo "############################################################"
 echo "#  PROJECT RESILIENCE-ALPHA — démonstration (cible $TARGET)"
 echo "#  À regarder en parallèle :"
 echo "#   - Grafana  http://127.0.0.1:3000  (dashboard Resilience-Alpha, section Sécurité)"
-echo "#   - Wazuh    https://127.0.0.1:8443  (Threat Hunting / alertes)"
+echo "#              (section « SIEM Wazuh » : détections du manager, alertes via Alertmanager)"
 echo "############################################################"
 
 echo; echo "### 1. État initial : une transaction légitime passe"

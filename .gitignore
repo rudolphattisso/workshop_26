@@ -12,7 +12,3 @@ __pycache__/
 *.pyc
 .venv/
 
-# Wazuh : certificats et fichiers rendus avec secrets (générés au déploiement)
-infra/wazuh/config/wazuh_indexer_ssl_certs/
-infra/wazuh/config/wazuh_dashboard/wazuh.yml
-infra/wazuh/config/wazuh_indexer/internal_users.yml

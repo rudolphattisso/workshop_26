@@ -37,7 +37,7 @@ Le mot de passe de l'utilisateur fictif `alice` est dans `secrets/demo_user_pass
 
 | Étape | Attendu côté défense |
 |---|---|
-| XSS / SQLi | BunkerWeb (ModSecurity/OWASP CRS) renvoie **403** ; Wazuh lève les règles 100101/100102 ; panneau « Sécurité » de Grafana |
+| XSS / SQLi | BunkerWeb (ModSecurity/OWASP CRS) renvoie **403** ; Wazuh lève les règles 100101/100102 (visibles dans Grafana) ; panneau « Sécurité » de Grafana |
 | DDoS | BunkerWeb **limite (429)** puis **bannit (403)** l'IP source ; Wazuh lève la règle DDoS ; la **transaction synthétique interne reste verte** |
 | Après | La reprise automatique et/ou le bannissement ont préservé le service ; nouvelle transaction interne OK |
 

@@ -48,15 +48,14 @@ Durée : ~5 min au premier lancement (téléchargement des images), < 1 min ensu
 | Interface | URL | Exposition |
 |---|---|---|
 | Application (via WAF BunkerWeb) | `http://<IP-hote>/` (ex. `http://192.168.137.1/`) | réseau du hotspot |
-| Grafana | http://127.0.0.1:3000 — dashboard *Resilience-Alpha — Vue d'ensemble* | local uniquement |
-| Wazuh (SIEM) | https://127.0.0.1:8443 — alertes XSS/SQLi/DDoS, FIM | local uniquement |
+| Grafana | http://127.0.0.1:3000 — dashboard *Resilience-Alpha* (métriques, logs, alertes, **section SIEM Wazuh**) | local uniquement |
 | Prometheus | http://127.0.0.1:9090 | local uniquement |
 | Alertmanager | http://127.0.0.1:9093 | local uniquement |
 | Moteur de remédiation (événements) | http://127.0.0.1:8090/events | local uniquement |
 
 Identifiants : `type secrets\grafana_admin_password` (Grafana `admin`), `type secrets\demo_user_password`
-(utilisateur fictif `alice`), Wazuh (`admin` / valeur `WAZUH_INDEXER_PASSWORD` dans `.env`).
-La base de données, Loki, l'indexer Wazuh, les exporters et les proxies Docker ne sont **jamais** publiés.
+(utilisateur fictif `alice`). Wazuh n'a pas d'interface propre : ses alertes sont dans Grafana.
+La base de données, Loki, Wazuh, les exporters et les proxies Docker ne sont **jamais** publiés.
 
 ## 4. Opérations courantes
 
@@ -92,7 +91,7 @@ Le rapport JSON (temps de détection / de reprise) est écrit dans `reports/`.
 DEMO_PASSWORD=<mdp alice> ./attack/run_demo.sh http://192.168.137.1
 ```
 Le WAF BunkerWeb bloque les XSS/SQLi (403) et bannit l'IP qui inonde (DDoS) ; **Wazuh** lève les
-alertes correspondantes (dashboard `https://127.0.0.1:8443`), Grafana montre le pic et les
+alertes correspondantes, **visibles dans Grafana** (section « SIEM Wazuh » + alertes Alertmanager) avec le pic et les
 blocages, et la transaction synthétique interne reste verte : le service tient.
 
 ## 6. Organisation du dépôt

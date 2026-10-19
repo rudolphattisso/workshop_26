@@ -99,7 +99,7 @@ requêtes utiles : `synthetic_transaction_success`, `probe_success`, `ALERTS{ale
 | Mode détection seule (démo avant/après) | `WAF_RULE_ENGINE=DetectionOnly` dans `.env` puis `ops reload` |
 | Anti-DoS | `USE_LIMIT_REQ` (débit) + `USE_BAD_BEHAVIOR` (auto-ban) : `WAF_API_RATE`, `WAF_BADBEHAVIOR_THRESHOLD`, `WAF_BAN_TIME` |
 | SOC léger (temps réel) | règles LogQL `infra/loki/rules/fake/security.yml` (→ Alertmanager) ; section « Sécurité » du dashboard Grafana |
-| SIEM (Wazuh) | règles de détection `infra/wazuh/config/wazuh_cluster/local_rules.xml` (plage 100000+) ; conf agent `infra/wazuh/config/wazuh_agent/ossec.conf` ; dashboard `https://127.0.0.1:8443`. `ops reload` recharge les règles. |
+| SIEM (Wazuh) | règles de détection `infra/wazuh/config/wazuh_cluster/local_rules.xml` (plage 100000+) ; conf agent `infra/wazuh/config/wazuh_agent/ossec.conf` ; alertes visibles dans Grafana (Loki, `service="wazuh"`) ; règles d'alerte `infra/loki/rules/fake/security.yml`. `ops deploy` recharge les règles. |
 | Nouveaux signaux pour Wazuh | ajouter un `<localfile>` dans l'ossec.conf de l'agent (le forwarder écrit déjà tous les journaux dans `/var/log/agent/<service>.log`) |
 | Secrets (SOPS/Vault) | alimenter `secrets/<nom>` par `sops -d` ou un agent Vault avant `deploy` ; aucun autre changement |
 | Surface exposée | seul le WAF (port 80) est joignable depuis le PC Attaquant |

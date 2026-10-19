@@ -30,19 +30,19 @@
 | Outil | Question à laquelle il répond | Ce qu'il fait ici | Ce qu'il ne fait PAS |
 |---|---|---|---|
 | **Docker** | *Comment isoler et livrer chaque composant ?* | Images immuables, une par service ; limites mémoire/CPU ; utilisateurs non-root | — |
-| **Docker Compose** | *Quel est l'état désiré de la plateforme ?* | Décrit de façon déclarative les 23 conteneurs, 9 réseaux, volumes, secrets, healthchecks, politiques de redémarrage | N'opère rien dans le temps (pas de sauvegarde, pas de vérification métier, pas de PRA) |
-| **Ansible** | *Comment opère-t-on la plateforme de façon reproductible ?* | Procédures codées et idempotentes : préflight, génération des secrets **et des certificats Wazuh**, validation des configs, déploiement, vérification fonctionnelle, sauvegarde, restauration, **PRA**, recette chaos | N'est pas dans la boucle de remédiation temps réel (trop lent, trop privilégié) |
+| **Docker Compose** | *Quel est l'état désiré de la plateforme ?* | Décrit de façon déclarative les 21 conteneurs, 9 réseaux, volumes, secrets, healthchecks, politiques de redémarrage | N'opère rien dans le temps (pas de sauvegarde, pas de vérification métier, pas de PRA) |
+| **Ansible** | *Comment opère-t-on la plateforme de façon reproductible ?* | Procédures codées et idempotentes : préflight, génération des secrets, validation des configs, déploiement, vérification fonctionnelle, sauvegarde, restauration, **PRA**, recette chaos | N'est pas dans la boucle de remédiation temps réel (trop lent, trop privilégié) |
 | **BunkerWeb** (WAF) | *Comment filtrer le trafic entrant ?* | Point d'entrée unique : nginx + ModSecurity + OWASP CRS v4 (bloque XSS/SQLi), limitation de débit et **bannissement automatique** des IP « bad behavior » (anti-DoS), reverse proxy vers les microservices | Export Prometheus = option PRO → supervision via blackbox + Loki |
 | **Prometheus** | *Dans quel état sont les services ?* | Scrape toutes les 5 s : métriques applicatives, sondes boîte noire via le WAF, conteneurs, base ; évalue les règles d'alerte | — |
 | **Loki + Alloy** | *Que s'est-il passé ?* | Centralise les journaux stdout de **tous** les conteneurs (découverte automatique), règles LogQL de sécurité (fonction SOC légère) | Pas d'Elastic : Loki n'indexe que les labels → ~10× moins de RAM |
-| **Wazuh** (SIEM/HIDS) | *Quelles menaces de sécurité ?* | SIEM complet : un agent surveille toute la plateforme (FIM, rootcheck, SCA, analyse des journaux) ; règles de détection XSS/SQLi/DDoS/force brute ; alertes indexées et visualisées dans le dashboard Wazuh | Charge mémoire : l'indexer est un OpenSearch (tas limité à 1 Go) — le PC IA est déporté sur un 3e poste |
+| **Wazuh** (SIEM/HIDS) | *Quelles menaces de sécurité ?* | Moteur de détection : un agent surveille toute la plateforme (FIM, rootcheck, SCA, analyse des journaux) ; le manager applique des règles XSS/SQLi/DDoS/force brute et **envoie ses alertes en syslog JSON vers Loki** → visualisées et alertées dans **Grafana** | Pas de dashboard ni d'indexer Wazuh (OpenSearch = Elastic, écarté par le sujet) : un seul outil de visualisation |
 | **Alertmanager** | *Qui doit réagir ?* | Groupe, dédoublonne, inhibe (si le WAF tombe, on ne redémarre pas l'API) puis appelle le moteur de remédiation (webhook authentifié) | — |
 | **Grafana** | *Comment le jury voit-il l'incident ?* | Dashboard provisionné « as code » : état avant / pendant / après, alertes, actions, logs, section Sécurité (SOC) | Aucune configuration manuelle : tout est dans `infra/grafana/` |
 
-> **Deux vues de sécurité complémentaires** : Grafana/Loki pour le SOC léger temps réel
-> (débit WAF, blocages, bannissements, corrélation avec la reprise) ; **Wazuh** comme SIEM
-> d'investigation (agent, FIM, règles de détection, historique indexé). L'Elastic Stack
-> classique n'est pas utilisée (charge mémoire) ; Wazuh est configuré avec un tas réduit.
+> **Un seul pupitre : Grafana.** Métriques (Prometheus), journaux (Loki), alertes (Alertmanager) et
+> détections du SIEM Wazuh (ses alertes sont poussées dans Loki) sont consultés au même endroit,
+> avec le même moteur d'alerte. Ni Elastic Stack ni OpenSearch ni dashboard Wazuh : économie
+> d'environ 3 Go de RAM et conformité à la consigne du sujet.
 
 ### Les deux WAF ? Non : un WAF en deux conteneurs
 
@@ -101,9 +101,9 @@ l'agent analyse. Les conteneurs applicatifs restent intacts (non-root, FS en lec
 | `monitoring` | oui | observabilité + endpoints `/metrics` | collecte |
 | `control` | oui | remediation, docker-proxy | plan de contrôle isolé |
 | `dockerapi-ro` | oui | alloy, logshipper, docker-proxy-ro | lecture des logs/API Docker |
-| `mgmt` | non | grafana, prometheus, alertmanager, remediation, wazuh.dashboard | publication sur 127.0.0.1 |
+| `mgmt` | non | grafana, prometheus, alertmanager, remediation | publication sur 127.0.0.1 |
 | `bw-universe` | oui | bunkerweb, bunkerweb-scheduler | plan de contrôle du WAF (API interne) |
-| `siem` | oui | wazuh.manager, wazuh.indexer, wazuh.dashboard, wazuh-agent | SIEM Wazuh (agents → manager → indexer) |
+| `siem` | oui | wazuh.manager, wazuh-agent, alloy | SIEM Wazuh (agent → manager ; alertes du manager → Alloy → Loki) |
 
 Un réseau `internal` n'a **aucune route vers l'extérieur** : un service applicatif compromis
 ne peut ni télécharger d'outil ni exfiltrer directement des données vers Internet.
@@ -126,8 +126,7 @@ ne peut ni télécharger d'outil ni exfiltrer directement des données vers Inte
   taille de requête bornée (256 Ko), en-têtes de sécurité. API interne du WAF restreinte au réseau
   `bw-universe` + jeton.
 - **SIEM Wazuh** : agent unique (pas d'agent dans les conteneurs applicatifs → durcissement préservé) ;
-  accès Docker du log-forwarder **en lecture seule** via le proxy ; dashboard et indexer **jamais**
-  publiés hors de `127.0.0.1` / réseau interne.
+  accès Docker du log-forwarder **en lecture seule** via le proxy ; aucun port Wazuh publié.
 - **Exceptions assumées** : cAdvisor est privilégié (lecture des cgroups) ; `logshipper` et `wazuh-agent`
   tournent en root (écriture du volume de journaux / collecte système) mais restent durcis (`cap_drop ALL`,
   `no-new-privileges`, accès Docker en lecture seule) et sur des réseaux internes, sans port publié.
@@ -145,7 +144,7 @@ ne peut ni télécharger d'outil ni exfiltrer directement des données vers Inte
 | `pg_up`, stats PostgreSQL | postgres-exporter | santé base |
 | `remediation_actions_total`, `remediation_last_recovery_seconds` | remédiation | MTTR |
 | Logs JSON (accès WAF, détections ModSecurity, login_failed, remédiation) | Loki | SOC léger temps réel, RAG |
-| Alertes XSS/SQLi/DDoS/force brute, FIM, rootcheck | Wazuh (manager → indexer) | SIEM : détection, investigation, historique |
+| Alertes XSS/SQLi/DDoS/force brute, FIM, rootcheck | Wazuh (manager → syslog → Alloy → Loki) | détections visibles et alertées dans Grafana |
 
 Rétention : 7 jours (métriques et logs) — couvre la semaine du workshop.
 
@@ -153,15 +152,15 @@ Rétention : 7 jours (métriques et logs) — couvre la semaine du workshop.
 
 | Essai | Résultat |
 |---|---|
-| RAM de toute la stack (23 conteneurs, Wazuh inclus) | **~2,3 Go** sur 7,6 Go alloués à Docker |
+| RAM de toute la stack (21 conteneurs, Wazuh manager + agent inclus) | **~1,7 Go** (mesuré ; 2,3 Go avec l'indexer + dashboard Wazuh, retirés) |
 | `chaos` : arrêt de `payment-api` / `kill auth` | détection ~21–24 s, reprise vérifiée par transaction ~32–33 s |
 | `recover -e wipe_data=true` : volume détruit, reconstruction + restauration | **48 s**, aucune perte de transaction |
 | Proxy Docker de la remédiation | `restart` → 204 ; `create`, `exec`, `kill`, `images`, `volumes` → **403** |
-| Attaque XSS / SQLi via le WAF | **403** (OWASP CRS) ; Wazuh lève les règles 100101 (XSS) / 100102 (SQLi) |
-| DDoS applicatif (~450 req) | WAF : **429** (limité) puis **403** (IP bannie, bad behavior) ; Wazuh lève l'alerte DDoS |
+| Attaque XSS / SQLi via le WAF | **403** (OWASP CRS) ; Wazuh lève 100101 (XSS) / 100102 (SQLi) → alertes `WazuhXssDetected` / `WazuhSqliDetected` dans Alertmanager/Grafana |
+| DDoS applicatif (~450 req) | WAF : **429** puis **403** (IP bannie) ; Wazuh règle 100110 → alerte `WazuhDdosDetected` dans Grafana |
 | Pendant l'attaque | `synthetic_transaction_success = 1` : le service métier reste disponible |
 
-L'empreinte (~2,3 Go) laisse de la marge sur un PC 16 Go ; le modèle de langage (Ollama) est
+L'empreinte laisse de la marge sur un PC 16 Go ; le modèle de langage (Ollama) est
 déporté sur le 3e poste. Les rapports détaillés des essais `chaos` sont dans `reports/`.
 
 ## 8. Points d'attention connus (et choix assumés)
@@ -182,10 +181,8 @@ déporté sur le 3e poste. Les rapports détaillés des essais `chaos` sont dans
   IP. La **preuve de continuité** pendant un DDoS repose sur la transaction synthétique interne
   (source distincte) et sur la reprise, pas sur l'accès de l'attaquant. En production, `USE_REAL_IP` avec
   un équilibreur transmettant l'IP cliente lèverait cette limite.
-- **Identifiants Wazuh internes** : le SIEM (indexer/dashboard/API) n'étant jamais exposé hors
-  `127.0.0.1` / réseau interne, les mots de passe internes gardent les valeurs de référence (écrites
-  dans `.env`, non versionné ; hachés en bcrypt dans `internal_users.yml`). À tourner avec
-  `wazuh-passwords-tool` pour un usage réel. Aucun secret en clair dans le dépôt.
+- **Pas d'interface Wazuh** : volontaire. Le manager n'expose aucun port ; son API (identifiants par défaut de l'image)
+  reste sur le réseau interne `siem`. Sans indexer, l'historique long des alertes n'est conservé que dans Loki (7 jours).
 - **Agent Wazuh unique** : excellent pour FIM/rootcheck/SCA et l'analyse des journaux, mais ne
   fournit pas la télémétrie *intra-conteneur* qu'un agent par conteneur donnerait — choix assumé
   pour préserver le durcissement (voir §2).
