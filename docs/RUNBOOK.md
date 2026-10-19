@@ -42,22 +42,41 @@ puis attend une transaction synthétique réussie. Rien à faire si l'événemen
 2. `docker compose ps` pour l'état, `docker compose logs --tail 100 <service>`.
 3. Reconstruction : `.\scripts\ops.ps1 recover`.
 
-## PROC-05 — Attaque applicative détectée par le WAF
-**Symptômes** : alerte `WafAttackBurst`, panneau « Détections WAF » en hausse,
-logs `{service="waf"} |= "ModSecurity"`.
-**Réponse automatique** : les requêtes malveillantes sont bloquées (HTTP 403) par l'OWASP CRS.
+## PROC-05 — Attaque applicative (XSS / SQLi) détectée par le WAF
+**Symptômes** : alertes Loki `XssAttackDetected` / `WafAttackBlocked` ; **Wazuh** : règles 100101
+(XSS), 100102 (SQLi), 100103 (campagne) ; panneau « Sécurité » de Grafana en hausse.
+**Réponse automatique** : BunkerWeb (ModSecurity + OWASP CRS v4) bloque les requêtes (HTTP 403).
 **Investigation** :
-1. IP source : `{service="waf"} | json | status = 403` dans Loki.
-2. Vérifier qu'aucune requête malveillante n'a obtenu de 2xx :
-   `{service="waf"} | json | status < 400 |~ "(?i)(union|select|<script|\\.\\./)"`.
-3. Si une requête a abouti → traiter comme une **compromission** (PROC-07).
+1. Wazuh (`https://127.0.0.1:8443`, *Threat Hunting*) : filtrer `rule.id:100101 OR rule.id:100102`.
+2. Loki/Grafana : `{service="bunkerweb"} |= "ModSecurity: Access denied"` (IP source, URI, règle CRS).
+3. Vérifier qu'aucune charge n'a abouti (2xx) : `{service="bunkerweb"} |~ "attack-xss|attack-sqli"`.
+   Si une requête malveillante a reçu un 2xx → traiter comme une **compromission** (PROC-07).
 
-## PROC-06 — Déni de service / flood
-**Symptômes** : alerte `RequestFlood`, latence p95 en hausse, réponses HTTP 429 dans les logs WAF.
-**Réponse automatique** : limitation de débit par IP au WAF (API 20 r/s, login 5 r/s) ; limites
-mémoire/CPU des conteneurs pour qu'un service saturé n'entraîne pas les autres ; si un service ne
-répond plus, PROC-04 s'applique.
-**Ajustement** : abaisser `WAF_API_RATE` dans `.env` puis `.\scripts\ops.ps1 deploy`.
+## PROC-06 — Déni de service / flood (DDoS)
+**Symptômes** : alerte Loki `RequestFlood` + `WafAutoBan` ; **Wazuh** règle DDoS (100112) ;
+réponses HTTP 429 puis 403 dans les logs BunkerWeb ; panneau « Requêtes/s reçues par le WAF ».
+**Réponse automatique** : BunkerWeb **limite le débit** (429) puis **bannit automatiquement** l'IP
+« bad behavior » (403, 5 min) ; les limites mémoire/CPU des conteneurs évitent la contagion. La
+**transaction synthétique interne reste verte** : le service tient. Si un service tombe, PROC-04.
+**Investigation** : `{service="bunkerweb"} |~ "is banned|BADBEHAVIOR"` (IP bannies).
+**Ajustement** : `WAF_API_RATE`, `WAF_BADBEHAVIOR_THRESHOLD`, `WAF_BAN_TIME` dans `.env` puis `ops reload`.
+**Rappel NAT** : en lab, le bannissement touche aussi les clients partageant l'IP NAT (voir INFRA §8).
+
+## PROC-05bis — Lancer / rejouer la démo d'attaque
+Depuis le **PC Attaquant** (voir `attack/README.md`) :
+```bash
+DEMO_PASSWORD=<mdp alice> ./attack/run_demo.sh http://192.168.137.1
+```
+Démo « avant/après » du WAF : `WAF_RULE_ENGINE=DetectionOnly` dans `.env` + `ops reload` (les XSS
+passent mais sont journalisées), puis `=On` + `ops reload` (les XSS sont bloquées).
+
+## PROC-05ter — SIEM Wazuh indisponible
+**Symptômes** : dashboard `https://127.0.0.1:8443` injoignable, ou agent inactif.
+1. État : `docker compose ps wazuh.indexer wazuh.manager wazuh.dashboard wazuh-agent logshipper`.
+2. Indexer non « green » : souvent la RAM — vérifier `WAZUH_INDEXER_HEAP` (≥ 512m) et la mémoire Docker.
+3. Agent inactif : `docker exec resilience-wazuh.manager-1 /var/ossec/bin/agent_control -l`.
+4. Pas de nouvelles alertes : vérifier que `logshipper` écrit (`docker logs resilience-logshipper-1`).
+5. Le SIEM est hors de la boucle de remédiation : son indisponibilité ne bloque pas le service métier.
 
 ## PROC-07 — Compromission suspectée (conteneur ou données altérés)
 Un redémarrage **ne suffit pas** : il faut repartir d'un état sain connu.

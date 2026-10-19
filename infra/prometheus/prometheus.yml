@@ -36,12 +36,6 @@ scrape_configs:
       - targets: ["postgres-exporter:9187"]
         labels: { service: postgres, tier: data }
 
-  # WAF (nginx stub_status via exporter)
-  - job_name: waf
-    static_configs:
-      - targets: ["waf-exporter:9113"]
-        labels: { service: waf, tier: edge }
-
   # Conteneurs (CPU, mémoire, réseau, redémarrages)
   - job_name: cadvisor
     scrape_interval: 10s
@@ -70,11 +64,11 @@ scrape_configs:
     metrics_path: /probe
     params: { module: [http_2xx] }
     static_configs:
-      - targets: ["http://waf:8080/"]
+      - targets: ["http://bunkerweb:8080/"]
         labels: { service: frontend }
-      - targets: ["http://waf:8080/api/payments/ready"]
+      - targets: ["http://bunkerweb:8080/api/payments/ready"]
         labels: { service: payment-api }
-      - targets: ["http://waf:8080/api/auth/ready"]
+      - targets: ["http://bunkerweb:8080/api/auth/ready"]
         labels: { service: auth }
     relabel_configs:
       - source_labels: [__address__]

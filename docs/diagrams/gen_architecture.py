@@ -19,6 +19,8 @@ ZONE = {
     "ro":      ("#fbe4e3", "#b85450"),
     "mgmt":    ("#e1d5e7", "#9673a6"),
     "engine":  ("#f5f5f5", "#666666"),
+    "siem":    ("#dae8d4", "#4f7942"),
+    "bw":      ("#ffe6cc", "#d79b00"),
     "ext":     ("#ffffff", "#333333"),
 }
 FLOW = {  # type -> (couleur, pointillé)
@@ -26,6 +28,8 @@ FLOW = {  # type -> (couleur, pointillé)
     "superv":  ("#2e7d32", 1),
     "control": ("#c62828", 0),
     "admin":   ("#6a1b9a", 1),
+    "siem":    ("#4f7942", 1),
+    "attack":  ("#d40000", 0),
 }
 
 
@@ -99,7 +103,7 @@ class Page:
 
 
 # =========================================================================== PAGE 1
-p1 = Page("1 - Architecture", 1800, 1180)
+p1 = Page("1 - Architecture", 1820, 1560)
 p1.text(20, 5, 1400, 30, "<font style='font-size:20px'><b>PROJECT RESILIENCE-ALPHA</b> — Architecture de déploiement"
         " (Docker Compose + Ansible)</font>")
 
@@ -112,16 +116,16 @@ jury = p1.box(20, 250, 220, 70, "<b>Jury / navigateur</b><br><font style='font-s
 ia = p1.box(20, 560, 220, 120, "<b>PC IA (optionnel)</b><br>192.168.137.y<br><font style='font-size:9px'>"
             "Ollama (LLM ≤ 8B) :11434<br>Assistant RAG LangChain<br>aucun accès au plan de contrôle</font>",
             "#ffffff", "#9673a6", "dashed=1;strokeWidth=2;")
-p1.box(262, 60, 36, 1040, "Point d'accès mobile Windows « RESILIENCE-G&lt;n&gt; » — 192.168.137.0/24",
+p1.box(262, 60, 36, 1440, "Point d'accès mobile Windows « RESILIENCE-G&lt;n&gt; » — 192.168.137.0/24",
        "#eeeeee", "#999999", "horizontal=0;fontStyle=1;rounded=0;")
 
 # PC Hôte
-p1.box(320, 40, 1460, 1080, "<b>PC Hôte — 192.168.137.1</b> · Windows 11 · Docker Desktop (WSL2) · projet Compose "
-       "« resilience » — 18 conteneurs", "#fafafa", "#333333",
+p1.box(320, 40, 1480, 1480, "<b>PC Hôte — 192.168.137.1</b> · Windows 11 · Docker Desktop (WSL2) · projet Compose "
+       "« resilience » — 23 conteneurs", "#fafafa", "#333333",
        "verticalAlign=top;align=left;spacingLeft=10;fontSize=13;strokeWidth=2;arcSize=1;")
 
 # Zones réseau
-p1.zone(340, 80, 230, 240, "edge · 172.30.10.0/24 (publié LAN)", "edge")
+p1.zone(340, 80, 230, 300, "edge · 172.30.10.0/24 (publié LAN)", "edge")
 p1.zone(600, 80, 770, 240, "app · 172.30.20.0/24 · interne", "app")
 p1.zone(600, 350, 770, 150, "data · 172.30.30.0/24 · interne", "data")
 p1.zone(340, 530, 1030, 300, "monitoring · 172.30.40.0/24 · interne", "mon")
@@ -132,8 +136,9 @@ p1.zone(1130, 860, 630, 220, "Moteur Docker & stockage", "engine")
 p1.zone(1400, 530, 360, 300, "Exploitation (Ansible)", "mgmt")
 
 # Services
-waf = p1.svc(360, 140, 190, 150, "WAF", "nginx + ModSecurity<br>OWASP CRS 4.25 (PL1)<br>rate-limit / IP<br>"
-             ":8080 ← 0.0.0.0:80<br>réseaux : edge, app, monitoring", "edge")
+waf = p1.svc(360, 140, 190, 150, "BunkerWeb (WAF)", "nginx + ModSecurity<br>OWASP CRS v4<br>rate-limit + auto-ban<br>"
+             ":8080 ← 0.0.0.0:80<br>edge, app, monitoring", "bw")
+bws = p1.svc(360, 300, 190, 70, "bunkerweb-scheduler", "plan de contrôle du WAF<br>pousse la conf (bw-universe)", "bw")
 fe = p1.svc(620, 140, 170, 150, "frontend", "nginx non-root<br>:8080<br>FS lecture seule<br>réseau : app", "app")
 auth = p1.svc(810, 140, 170, 150, "auth", "FastAPI · JWT<br>:8000<br>rôle BDD auth_svc<br>app, data, monitoring", "app")
 pay = p1.svc(1000, 140, 170, 150, "payment-api", "FastAPI · paiements<br>:8000<br>rôle BDD payment_svc<br>app, data, monitoring", "app")
@@ -145,8 +150,7 @@ am = p1.svc(560, 570, 180, 100, "Alertmanager", "groupage · inhibition<br>:9093
 loki = p1.svc(760, 570, 180, 100, "Loki", "logs · ruler SOC<br>:3100 · rétention 7 j", "mon")
 alloy = p1.svc(960, 570, 180, 100, "Alloy", "collecte logs Docker<br>user alloy (non-root)", "mon")
 graf = p1.svc(1160, 570, 190, 100, "Grafana", "dashboards as code<br>:3000", "mon")
-bb = p1.svc(360, 710, 180, 100, "blackbox-exporter", "sondes HTTP via WAF<br>:9115", "mon")
-we = p1.svc(560, 710, 180, 100, "waf-exporter", "stub_status nginx<br>:9113", "mon")
+bb = p1.svc(360, 710, 180, 100, "blackbox-exporter", "sondes HTTP via le WAF<br>:9115 (santé WAF + services)", "mon")
 pge = p1.svc(760, 710, 180, 100, "postgres-exporter", "rôle exporter (pg_monitor)<br>:9187 · data, monitoring", "mon")
 cad = p1.svc(960, 710, 180, 100, "cAdvisor", "CPU / RAM conteneurs<br>:8080 · privilégié (exception)", "mon")
 
@@ -163,8 +167,8 @@ p1.svc(1420, 910, 320, 150, "Volumes nommés", "pgdata · prometheus-data · lok
 admin = p1.svc(1420, 130, 320, 80, "Opérateur sur le PC Hôte", "navigateur local", "mgmt")
 ports = p1.svc(1420, 250, 320, 220, "Interfaces d'administration",
                "127.0.0.1:3000 → Grafana<br>127.0.0.1:9090 → Prometheus<br>127.0.0.1:9093 → Alertmanager<br>"
-               "127.0.0.1:8090 → Remédiation (/events)<br><br>Base, Loki, exporters, proxies :<br>"
-               "<b>jamais publiés</b>", "mgmt")
+               "127.0.0.1:8090 → Remédiation (/events)<br>127.0.0.1:8443 → Wazuh (SIEM)<br><br>"
+               "Base, Loki, indexer Wazuh,<br>exporters, proxies : <b>jamais publiés</b>", "mgmt")
 ans = p1.svc(1420, 570, 320, 240, "Runner Ansible (conteneur éphémère)",
              "scripts/ops.ps1 &lt;action&gt;<br>deploy · verify · backup · restore<br>recover (PRA) · chaos · reload · teardown<br><br>"
              "socket Docker de l'hôte + rejoint<br>edge &amp; mgmt pour les vérifications<br>"
@@ -182,7 +186,6 @@ p1.edge(txp, waf, "F07", "metier", "exitX=0.5;exitY=1;entryX=0.5;entryY=1;dashed
 p1.edge(prom, auth, "F08", "superv", "exitX=0.3;exitY=0;entryX=0.3;entryY=1;")
 p1.edge(prom, bb, "F09", "superv")
 p1.edge(bb, waf, "F10", "superv", "exitX=0;exitY=0.5;entryX=0.2;entryY=1;")
-p1.edge(we, waf, "F11", "superv", "exitX=1;exitY=0.3;entryX=0.6;entryY=1;", [(750, 740), (750, 515), (474, 515)])
 p1.edge(pge, pg, "F12", "superv", "exitX=1;exitY=0.3;entryX=0.318;entryY=1;", [(950, 740)])
 p1.edge(alloy, dpro, "F13", "superv", "exitX=1;exitY=0.8;entryX=0.5;entryY=0;", [(1150, 650), (1150, 845), (995, 845)])
 p1.edge(alloy, loki, "F14", "superv")
@@ -195,20 +198,39 @@ p1.edge(admin, ports, "F21", "admin")
 p1.edge(ans, eng, "F22", "admin", "exitX=0.3;exitY=1;entryX=0.5;entryY=0;")
 p1.edge(dp, eng, "F23", "control", "exitX=0.5;exitY=1;entryX=0.2;entryY=1;")
 p1.edge(dpro, eng, "F23", "superv", "exitX=1;exitY=0.7;entryX=0;entryY=0.7;")
+# WAF : contrôle (scheduler) + attaques
+p1.edge(bws, waf, "bw-universe", "control", "exitX=0.5;exitY=0;entryX=0.5;entryY=1;")
+p1.edge(atk, waf, "XSS / DDoS", "attack", "exitX=1;exitY=0.75;entryX=0;entryY=0.55;")
+
+# ---- SIEM Wazuh (bande basse) ----
+p1.zone(340, 1140, 1420, 350, "siem · 172.30.90.0/24 · interne   (dashboard aussi sur mgmt → 127.0.0.1:8443)", "siem")
+ls = p1.svc(360, 1210, 230, 110, "logshipper", "lit les logs via docker-proxy-ro<br>écrit /var/log/agent/*.log<br>(contourne l'absence de<br>fichiers de logs sur Docker Desktop)", "ro")
+wag = p1.svc(620, 1210, 230, 110, "wazuh-agent", "agent UNIQUE (hôte)<br>FIM · rootcheck · SCA<br>analyse des journaux<br>ne dé-durcit aucun conteneur", "siem")
+wmgr = p1.svc(880, 1210, 230, 110, "wazuh.manager", "règles de détection custom<br>XSS/SQLi/DDoS/force brute<br>:1514/1515/55000", "siem")
+widx = p1.svc(1140, 1210, 220, 110, "wazuh.indexer", "OpenSearch · tas 1 Go<br>index wazuh-alerts<br>jamais publié", "siem")
+wdash = p1.svc(1380, 1210, 220, 110, "wazuh.dashboard", "SIEM UI<br>127.0.0.1:8443<br>(réseau mgmt)", "siem")
+p1.edge(ls, dpro, "F25", "siem", "exitX=0.5;exitY=0;entryX=0.5;entryY=1;")
+p1.edge(ls, wag, "F26", "siem", "exitX=1;exitY=0.5;entryX=0;entryY=0.5;")
+p1.edge(wag, wmgr, "F27", "siem", "exitX=1;exitY=0.5;entryX=0;entryY=0.5;")
+p1.edge(wmgr, widx, "F28", "siem", "exitX=1;exitY=0.5;entryX=0;entryY=0.5;")
+p1.edge(wdash, widx, "F29", "siem", "exitX=0.5;exitY=0;entryX=0.5;entryY=0;")
+p1.edge(ports, wdash, "F30", "admin", "exitX=0.5;exitY=1;entryX=0.5;entryY=0;", [(1580, 1180)])
 
 # Légende
-p1.box(20, 720, 230, 380,
+p1.box(20, 700, 230, 490,
        "<b>Légende</b><br><br>"
        "<font color='#1f5eff'><b>━━ </b></font>flux métier<br>"
        "<font color='#2e7d32'><b>╍╍ </b></font>supervision (métriques, logs)<br>"
        "<font color='#c62828'><b>━━ </b></font>détection → remédiation<br>"
-       "<font color='#6a1b9a'><b>╍╍ </b></font>administration / exploitation<br><br>"
+       "<font color='#6a1b9a'><b>╍╍ </b></font>administration / exploitation<br>"
+       "<font color='#4f7942'><b>╍╍ </b></font>SIEM (agent → manager → indexer)<br>"
+       "<font color='#d40000'><b>━━ </b></font>attaque (depuis le PC Attaquant)<br><br>"
        "Fxx = n° dans la matrice de flux (page 2)<br>F19 : remédiation → txprobe:8000/check<br>"
        "F20 : Grafana → Prometheus, Loki, Alertmanager<br>F08 : Prometheus scrape aussi payment-api, txprobe, remediation<br><br>"
        "<b>Zones « interne »</b> : aucune route vers l'extérieur<br>"
        "<b>Seul port publié sur le LAN</b> : 80/tcp (WAF)<br><br>"
-       "<b>Boucle de reprise</b> : règle → Alertmanager → remédiation → proxy → restart → "
-       "transaction synthétique OK",
+       "<b>Reprise</b> : règle → Alertmanager → remédiation → proxy → restart → transaction OK<br>"
+       "<b>Défense WAF</b> : XSS/SQLi → 403 ; DDoS → 429 puis auto-ban ; Wazuh alerte",
        "#ffffff", "#333333", "align=left;verticalAlign=top;spacing=8;fontSize=10;")
 
 # =========================================================================== PAGE 2
@@ -218,31 +240,39 @@ p2.text(20, 10, 1600, 30, "<font style='font-size:20px'><b>Matrice des flux auto
 cols = [("ID", 50), ("Source", 165), ("Destination", 185), ("Réseau", 115), ("Port / protocole", 150),
         ("Objet", 330), ("Contrôles de sécurité", 400)]
 M, S, C, A = (FLOW[k][0] for k in ("metier", "superv", "control", "admin"))
+Sm, Atk = FLOW["siem"][0], FLOW["attack"][0]
 flows = [
-    ("F01", "PC Attaquant, jury (LAN hotspot)", "WAF", "LAN → edge", "TCP 80 → 8080 HTTP", "Accès à l'application (seul flux entrant)", "OWASP CRS (PL1, seuil 5), rate-limit 20 r/s API / 5 r/s login, corps ≤ 64 Ko, /api/* non routé → 404", M),
-    ("F02", "WAF", "frontend", "app", "TCP 8080 HTTP", "Pages web (/)", "Inspection WAF préalable ; frontal non-root, FS lecture seule", M),
-    ("F03", "WAF", "auth", "app", "TCP 8000 HTTP", "/api/auth/login, /api/auth/ready", "Rate-limit login (anti brute force) ; journal JSON login_failed", M),
-    ("F04", "WAF", "payment-api", "app", "TCP 8000 HTTP", "/api/payments*, /api/payments/ready", "JWT HS256 obligatoire ; validation des montants (pydantic)", M),
+    ("F01", "PC Attaquant, jury (LAN hotspot)", "BunkerWeb (WAF)", "LAN → edge", "TCP 80 → 8080 HTTP", "Accès à l'application (seul flux entrant)", "ModSecurity + OWASP CRS v4 (XSS/SQLi → 403) ; rate-limit 20 r/s (5 r/s login) ; auto-ban bad behavior ; corps ≤ 256 Ko", M),
+    ("F02", "BunkerWeb", "frontend", "app", "TCP 8080 HTTP", "Pages web (/)", "Inspection WAF préalable ; frontal non-root, FS lecture seule", M),
+    ("F03", "BunkerWeb", "auth", "app", "TCP 8000 HTTP", "/api/auth/login, /api/auth/ready", "Rate-limit login (anti brute force) ; journal JSON login_failed", M),
+    ("F04", "BunkerWeb", "payment-api", "app", "TCP 8000 HTTP", "/api/payments*, /api/payments/ready", "JWT HS256 obligatoire ; validation des montants (pydantic)", M),
     ("F05", "auth", "PostgreSQL", "data", "TCP 5432 PostgreSQL", "Lecture des comptes", "Rôle auth_svc : SELECT sur users uniquement ; mots de passe bcrypt", M),
     ("F06", "payment-api", "PostgreSQL", "data", "TCP 5432 PostgreSQL", "Écriture / lecture des transactions", "Rôle payment_svc : SELECT, INSERT sur transactions ; pas d'UPDATE/DELETE", M),
-    ("F07", "txprobe", "WAF", "app", "TCP 8080 HTTP", "Transaction synthétique (login → paiement → relecture) / 5 s", "Compte dédié synthetic-probe (rôle probe) ; passe par le WAF comme un client", M),
+    ("F07", "txprobe", "BunkerWeb", "app", "TCP 8080 HTTP", "Transaction synthétique (login → paiement → relecture) / 5 s", "Compte dédié synthetic-probe ; passe par le WAF comme un client (source interne, non bannie)", M),
     ("F08", "Prometheus", "auth, payment-api, txprobe, remediation", "monitoring", "TCP 8000 HTTP GET /metrics", "Métriques applicatives", "Réseau interne ; lecture seule", S),
-    ("F09", "Prometheus", "blackbox, waf-exporter, postgres-exporter, cAdvisor, Loki, Grafana, Alloy, Alertmanager", "monitoring", "TCP 9115 / 9113 / 9187 / 8080 / 3100 / 3000 / 12345 / 9093", "Métriques d'infrastructure", "Réseau interne ; aucun de ces ports n'est publié", S),
-    ("F10", "blackbox-exporter", "WAF", "monitoring", "TCP 8080 HTTP", "Sondes de disponibilité vues du client", "User-Agent dédié ; même chemin que les utilisateurs", S),
-    ("F11", "waf-exporter", "WAF /metrics/nginx", "monitoring", "TCP 8080 HTTP", "stub_status nginx", "allow 172.30.40.0/24 ; deny all", S),
+    ("F09", "Prometheus", "blackbox, postgres-exporter, cAdvisor, Loki, Grafana, Alloy, Alertmanager", "monitoring", "TCP 9115 / 9187 / 8080 / 3100 / 3000 / 12345 / 9093", "Métriques d'infrastructure", "Réseau interne ; aucun de ces ports n'est publié", S),
+    ("F10", "blackbox-exporter", "BunkerWeb", "monitoring", "TCP 8080 HTTP", "Sondes de disponibilité (santé du WAF et des services)", "User-Agent dédié ; même chemin que les utilisateurs", S),
+    ("F11", "bunkerweb-scheduler", "BunkerWeb (instance)", "bw-universe", "TCP 5000 HTTP (API)", "Pousse la configuration générée au WAF", "Réseau interne bw-universe ; API restreinte par IP + jeton", C),
     ("F12", "postgres-exporter", "PostgreSQL", "data", "TCP 5432 PostgreSQL", "Statistiques de la base", "Rôle exporter : pg_monitor (pas d'accès aux tables métier)", S),
     ("F13", "Alloy", "docker-proxy-ro", "dockerapi-ro", "TCP 2375 HTTP (API Docker)", "Découverte des conteneurs et lecture des logs", "GET containers / networks / events uniquement ; POST = 403 ; Alloy non-root", S),
     ("F14", "Alloy", "Loki", "monitoring", "TCP 3100 HTTP push", "Envoi des journaux de tous les conteneurs", "Réseau interne", S),
     ("F15", "Prometheus", "Alertmanager", "monitoring", "TCP 9093 HTTP", "Alertes métriques (dont aiops_anomaly_score)", "Labels remediation / target portés par les règles versionnées", C),
     ("F16", "Loki (ruler)", "Alertmanager", "monitoring", "TCP 9093 HTTP", "Alertes sur logs (WAF burst, brute force, remédiation échouée)", "Règles LogQL versionnées (fonction SOC)", C),
     ("F17", "Alertmanager", "Moteur de remédiation", "monitoring", "TCP 8000 HTTP POST /webhook/alertmanager", "Déclenchement de la remédiation", "Jeton Bearer (Docker secret) ; inhibition des effets de bord ; send_resolved", C),
-    ("F18", "Moteur de remédiation", "docker-proxy", "control", "TCP 2375 HTTP (API Docker)", "Redémarrage du service ciblé", "Liste blanche (waf, frontend, auth, payment-api, postgres) ; cooldown 45 s ; proxy : start/stop/restart seuls", C),
+    ("F18", "Moteur de remédiation", "docker-proxy", "control", "TCP 2375 HTTP (API Docker)", "Redémarrage du service ciblé", "Liste blanche (bunkerweb, frontend, auth, payment-api, postgres) ; cooldown 45 s ; proxy : start/stop/restart seuls", C),
     ("F19", "Moteur de remédiation", "txprobe", "monitoring", "TCP 8000 HTTP GET /check", "Preuve de reprise par transaction réelle", "La reprise n'est déclarée réussie qu'après une transaction OK", C),
     ("F20", "Grafana", "Prometheus, Loki, Alertmanager", "monitoring", "TCP 9090 / 3100 / 9093 HTTP", "Visualisation", "Datasources provisionnées ; anonyme en lecture seule (Viewer)", S),
     ("F21", "Opérateur (navigateur du PC Hôte)", "Grafana, Prometheus, Alertmanager, Remédiation", "mgmt (loopback)", "127.0.0.1 : 3000 / 9090 / 9093 / 8090", "Administration et démonstration", "Liés à 127.0.0.1 : inaccessibles depuis le LAN / PC Attaquant", A),
     ("F22", "Runner Ansible", "Docker Engine (+ réseaux edge, mgmt)", "socket local", "unix:///var/run/docker.sock", "Déploiement, vérification, sauvegarde, restauration, PRA, chaos", "Conteneur éphémère lancé par l'opérateur ; silence Alertmanager pendant les opérations", A),
     ("F23", "docker-proxy, docker-proxy-ro, cAdvisor", "Docker Engine / hôte", "socket local", "unix:///var/run/docker.sock (ro)", "Accès API Docker filtré ; métriques cgroups", "Seuls composants à toucher le socket ; aucun port publié", C),
     ("F24", "Assistant RAG (PC IA)", "Ollama", "LAN hotspot", "TCP 11434 HTTP", "Inférence du LLM local (optionnel, 3e poste)", "Pare-feu : PC Hôte uniquement ; aucun accès à la remédiation ni au proxy Docker", A),
+    ("F25", "logshipper", "docker-proxy-ro", "dockerapi-ro", "TCP 2375 HTTP (API Docker)", "Lecture des journaux de tous les conteneurs", "GET seulement (logs/containers) ; écrit /var/log/agent/*.log", Sm),
+    ("F26", "logshipper", "wazuh-agent", "volume agent-logs", "fichiers /var/log/agent/*.log", "Journaux mis à disposition de l'agent", "Volume partagé ; l'agent lit en lecture seule", Sm),
+    ("F27", "wazuh-agent", "wazuh.manager", "siem", "TCP 1514 / 1515 (enrôlement)", "Évènements agent (FIM, rootcheck, SCA, logs)", "Agent unique de l'hôte ; ne dé-durcit aucun conteneur applicatif", Sm),
+    ("F28", "wazuh.manager", "wazuh.indexer", "siem", "TCP 9200 HTTPS (Filebeat)", "Indexation des alertes (wazuh-alerts)", "TLS interne ; indexer jamais publié", Sm),
+    ("F29", "wazuh.dashboard", "wazuh.indexer / wazuh.manager", "siem", "TCP 9200 / 55000 HTTPS", "Visualisation des alertes et de l'état des agents", "UI publiée seulement sur 127.0.0.1:8443", Sm),
+    ("F30", "Opérateur (PC Hôte)", "wazuh.dashboard", "mgmt (loopback)", "127.0.0.1:8443 HTTPS", "Investigation SIEM", "Liée à 127.0.0.1 ; inaccessible depuis le LAN", A),
+    ("A1", "PC Attaquant", "BunkerWeb (WAF)", "LAN → edge", "TCP 80 HTTP", "Attaques XSS / SQLi / DDoS (démo)", "Bloquées (403) ou limitées/bannies (429→403) ; Wazuh lève les alertes 1001xx", Atk),
 ]
 end = p2.table(20, 60, cols, [list(f[:7]) for f in flows], row_h=46, fills=[f[7] + "33" for f in flows])
 
@@ -251,8 +281,8 @@ deny_cols = [("Source", 230), ("Destination", 260), ("Résultat", 260), ("Mécan
 denied = [
     ["PC Attaquant", "PostgreSQL :5432", "injoignable", "port non publié ; réseau data interne"],
     ["PC Attaquant", "Grafana / Prometheus / Alertmanager / Remédiation", "injoignable", "publiés sur 127.0.0.1 uniquement"],
-    ["PC Attaquant", "WAF avec injection SQL (?id=1' OR 1=1--)", "HTTP 403", "OWASP CRS (règles 942xxx) ; journalisé dans Loki"],
-    ["PC Attaquant (flood)", "WAF /api/*", "HTTP 429", "limit_req 20 r/s par IP, burst 40"],
+    ["PC Attaquant", "XSS / SQLi via le WAF", "HTTP 403", "ModSecurity + OWASP CRS v4 ; Wazuh règles 100101/100102"],
+    ["PC Attaquant (flood/DDoS)", "WAF (toutes URL)", "429 puis 403", "rate-limit par IP puis auto-ban bad behavior ; Wazuh alerte DDoS"],
     ["Conteneurs app / data / monitoring", "Internet", "aucune route", "réseaux Docker internal: true (anti-exfiltration)"],
     ["Moteur de remédiation", "docker-proxy : create / exec / kill / images / volumes", "HTTP 403", "configuration HAProxy durcie (infra/docker-proxy)"],
     ["Moteur de remédiation", "conteneur hors liste blanche", "refusé", "remediation_refused journalisé"],
@@ -261,20 +291,21 @@ denied = [
 p2.table(20, end + 70, deny_cols, denied, header_fill="#b85450", row_h=36)
 
 # =========================================================================== PAGE 3
-p3 = Page("3 - Inventaire serveurs", 1700, 1300)
+p3 = Page("3 - Inventaire serveurs", 1760, 1480)
 p3.text(20, 10, 1600, 30, "<font style='font-size:20px'><b>Inventaire</b> — machines physiques et conteneurs</font>")
 mcols = [("Machine", 150), ("Adresse", 170), ("Système", 260), ("Ressources", 250), ("Rôle", 330), ("Exposition", 330)]
 machines = [
-    ["PC Hôte", "192.168.137.1 (hotspot)", "Windows 11 · Docker Desktop 29 (WSL2)", "4+ cœurs · 16 Go (6–8 Go pour Docker) · 50 Go SSD", "Exécute les 18 conteneurs + runner Ansible", "80/tcp sur le hotspot ; admin sur 127.0.0.1"],
+    ["PC Hôte", "192.168.137.1 (hotspot)", "Windows 11 · Docker Desktop 29 (WSL2)", "4+ cœurs · 16 Go (6–8 Go pour Docker) · 50 Go SSD", "Exécute les 23 conteneurs + runner Ansible", "80/tcp sur le hotspot ; admin sur 127.0.0.1"],
     ["PC Attaquant", "192.168.137.x (DHCP)", "Kali Linux / outils Red Team", "8–16 Go RAM", "Scénarios offensifs depuis un poste distinct", "Aucune ; cible autorisée = 192.168.137.1:80"],
-    ["PC IA (optionnel)", "192.168.137.y (DHCP)", "Windows / Linux · Ollama", "16 Go RAM, GPU conseillé", "LLM ≤ 8B + assistant RAG LangChain", "11434/tcp vers le PC Hôte uniquement"],
+    ["PC IA (déporté)", "192.168.137.y (DHCP)", "Windows / Linux · Ollama", "16 Go RAM, GPU conseillé", "LLM ≤ 8B + RAG LangChain — déporté pour libérer la RAM du PC Hôte (Wazuh)", "11434/tcp vers le PC Hôte uniquement"],
 ]
 end = p3.table(20, 60, mcols, machines, row_h=46)
 
 ccols = [("Service", 140), ("Image", 270), ("Rôle", 190), ("Port interne", 90), ("Publication", 130),
          ("Réseaux", 230), ("Utilisateur", 130), ("Lim. RAM", 80), ("Durcissement", 230)]
 containers = [
-    ["waf", "owasp/modsecurity-crs:4.25.2-nginx-alpine-lts", "WAF / reverse proxy", "8080", "0.0.0.0:80", "edge, app, monitoring", "nginx (101)", "256 Mo", "cap_drop ALL, no-new-privileges"],
+    ["bunkerweb", "bunkerity/bunkerweb:1.6.16", "WAF / reverse proxy (données)", "8080", "0.0.0.0:80", "edge, app, monitoring, bw-universe", "nginx (101)", "384 Mo", "cap_drop ALL, no-new-privileges"],
+    ["bunkerweb-scheduler", "bunkerity/bunkerweb-scheduler:1.6.16", "WAF — plan de contrôle", "—", "—", "bw-universe", "root", "384 Mo", "API interne + jeton"],
     ["frontend", "resilience/frontend (nginx-unprivileged)", "Frontal web", "8080", "—", "app", "nginx (101)", "64 Mo", "FS lecture seule"],
     ["auth", "resilience/auth (python 3.12)", "Authentification JWT", "8000", "—", "app, data, monitoring", "10001", "192 Mo", "FS lecture seule, secrets fichiers"],
     ["payment-api", "resilience/payment-api (python 3.12)", "API de paiement", "8000", "—", "app, data, monitoring", "10001", "192 Mo", "FS lecture seule, secrets fichiers"],
@@ -285,17 +316,21 @@ containers = [
     ["alloy", "grafana/alloy:v1.10.0", "Collecte des logs", "12345", "—", "monitoring, dockerapi-ro", "alloy", "256 Mo", "pas de socket Docker direct"],
     ["grafana", "grafana/grafana:12.1.0", "Visualisation", "3000", "127.0.0.1:3000", "monitoring, mgmt", "472", "384 Mo", "provisioning en lecture seule"],
     ["blackbox", "prom/blackbox-exporter:v0.27.0", "Sondes HTTP", "9115", "—", "monitoring", "nobody", "64 Mo", "cap_drop ALL"],
-    ["waf-exporter", "nginx/nginx-prometheus-exporter:1.4.2", "Métriques WAF", "9113", "—", "monitoring", "nobody", "32 Mo", "cap_drop ALL"],
     ["postgres-exporter", "prometheuscommunity/postgres-exporter:v0.17.1", "Métriques BDD", "9187", "—", "data, monitoring", "nobody", "64 Mo", "rôle pg_monitor"],
     ["cadvisor", "gcr.io/cadvisor/cadvisor:v0.55.1", "Métriques conteneurs", "8080", "—", "monitoring", "root", "256 Mo", "privilégié (exception documentée)"],
     ["txprobe", "resilience/txprobe (python 3.12)", "Transaction synthétique", "8000", "—", "app, monitoring", "10001", "128 Mo", "FS lecture seule"],
     ["remediation", "resilience/remediation (python 3.12)", "Moteur de remédiation", "8000", "127.0.0.1:8090", "monitoring, control, mgmt", "10001", "128 Mo", "liste blanche, jeton, via proxy"],
+    ["logshipper", "resilience/logshipper (python 3.12)", "Forwarder logs -> Wazuh", "—", "—", "dockerapi-ro", "root", "96 Mo", "FS lecture seule, Docker en lecture seule"],
+    ["wazuh-agent", "wazuh/wazuh-agent:4.14.9", "Agent SIEM unique (FIM/SCA)", "—", "—", "siem", "root", "256 Mo", "lecture seule des secrets/configs"],
+    ["wazuh.manager", "wazuh/wazuh-manager:4.14.9", "SIEM — corrélation/règles", "1514/1515/55000", "—", "siem", "wazuh", "1 Go", "réseau interne"],
+    ["wazuh.indexer", "wazuh/wazuh-indexer:4.14.9", "SIEM — OpenSearch (tas 1 Go)", "9200", "—", "siem", "wazuh-indexer", "2 Go", "TLS interne ; jamais publié"],
+    ["wazuh.dashboard", "wazuh/wazuh-dashboard:4.14.9", "SIEM — UI", "5601", "127.0.0.1:8443", "siem, mgmt", "wazuh-dashboard", "1 Go", "loopback uniquement"],
     ["docker-proxy", "tecnativa/docker-socket-proxy:v0.4.2", "API Docker filtrée (rw)", "2375", "—", "control", "haproxy", "64 Mo", "HAProxy durci : start/stop/restart"],
     ["docker-proxy-ro", "tecnativa/docker-socket-proxy:v0.4.2", "API Docker lecture seule", "2375", "—", "dockerapi-ro", "haproxy", "64 Mo", "POST interdit"],
 ]
 end = p3.table(20, end + 40, ccols, containers, row_h=32)
-p3.text(20, end + 15, 1600, 40, "Mesuré au repos : ~0,95 Go de RAM pour les 18 conteneurs. Volumes : pgdata, prometheus-data, "
-        "loki-data, grafana-data, alertmanager-data, alloy-data. Secrets : ./secrets (Docker secrets, non versionnés).")
+p3.text(20, end + 15, 1600, 40, "Mesuré : ~2,3 Go de RAM pour les 23 conteneurs (Wazuh inclus) sur 7,6 Go alloués. Volumes : pgdata, "
+        "prometheus/loki/grafana/alertmanager/alloy-data, bw-data, wazuh-* , agent-logs. Secrets : ./secrets + .env (non versionnés).")
 
 doc = ('<mxfile host="app.diagrams.net" type="device">'
        + "".join(p.xml(i) for i, p in enumerate((p1, p2, p3), 1)) + "</mxfile>")

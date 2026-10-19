@@ -47,15 +47,16 @@ Durée : ~5 min au premier lancement (téléchargement des images), < 1 min ensu
 
 | Interface | URL | Exposition |
 |---|---|---|
-| Application (via WAF) | `http://<IP-hote>/` (ex. `http://192.168.137.1/`) | réseau du hotspot |
+| Application (via WAF BunkerWeb) | `http://<IP-hote>/` (ex. `http://192.168.137.1/`) | réseau du hotspot |
 | Grafana | http://127.0.0.1:3000 — dashboard *Resilience-Alpha — Vue d'ensemble* | local uniquement |
+| Wazuh (SIEM) | https://127.0.0.1:8443 — alertes XSS/SQLi/DDoS, FIM | local uniquement |
 | Prometheus | http://127.0.0.1:9090 | local uniquement |
 | Alertmanager | http://127.0.0.1:9093 | local uniquement |
 | Moteur de remédiation (événements) | http://127.0.0.1:8090/events | local uniquement |
 
-Identifiants (générés) : `type secrets\grafana_admin_password` (Grafana, utilisateur `admin`) et
-`type secrets\demo_user_password` (utilisateur applicatif fictif `alice`).
-La base de données, Loki, les exporters et le proxy Docker ne sont **jamais** publiés.
+Identifiants : `type secrets\grafana_admin_password` (Grafana `admin`), `type secrets\demo_user_password`
+(utilisateur fictif `alice`), Wazuh (`admin` / valeur `WAZUH_INDEXER_PASSWORD` dans `.env`).
+La base de données, Loki, l'indexer Wazuh, les exporters et les proxies Docker ne sont **jamais** publiés.
 
 ## 4. Opérations courantes
 
@@ -76,14 +77,23 @@ Toutes les opérations passent par **un seul point d'entrée** : `scripts/ops.ps
 Relance après redémarrage du PC : démarrer Docker Desktop — les conteneurs ont
 `restart: unless-stopped` et repartent seuls — puis `.\scripts\ops.ps1 verify`.
 
-## 5. Démo de résilience en 30 secondes
+## 5. Démos
 
+**Reprise automatique (panne de service)** :
 ```powershell
 .\scripts\ops.ps1 chaos                       # arrête payment-api et chronomètre la reprise
 ```
 Dans Grafana : la transaction synthétique passe au rouge, l'alerte `PaymentApiUnavailable`
 se déclenche, le moteur redémarre le service, puis la transaction repasse au vert.
 Le rapport JSON (temps de détection / de reprise) est écrit dans `reports/`.
+
+**Attaque DDoS + XSS (depuis le PC Attaquant)** — voir [attack/README.md](attack/README.md) :
+```bash
+DEMO_PASSWORD=<mdp alice> ./attack/run_demo.sh http://192.168.137.1
+```
+Le WAF BunkerWeb bloque les XSS/SQLi (403) et bannit l'IP qui inonde (DDoS) ; **Wazuh** lève les
+alertes correspondantes (dashboard `https://127.0.0.1:8443`), Grafana montre le pic et les
+blocages, et la transaction synthétique interne reste verte : le service tient.
 
 ## 6. Organisation du dépôt
 
@@ -92,8 +102,9 @@ docker-compose.yml        Définition de toute la plateforme (réseaux, secrets,
 .env.example              Paramètres non secrets (ports, WAF, remédiation)
 scripts/ops.ps1|ops.sh    Point d'entrée des opérations (lance Ansible en conteneur)
 ansible/                  Runner, inventaire, playbooks (deploy, verify, backup, restore, recover, chaos…)
-infra/                    Configurations : waf, postgres, prometheus, alertmanager, loki, alloy, grafana, blackbox
-services/                 Services de référence : auth, payment-api, txprobe, remediation, frontend
+infra/                    Configs : waf (BunkerWeb), postgres, prometheus, alertmanager, loki, alloy, grafana, blackbox, docker-proxy, wazuh
+services/                 Services de référence : auth, payment-api, txprobe, remediation, frontend, logshipper
+attack/                   Banc d'attaque de démo (DDoS, XSS) — à lancer depuis le PC Attaquant
 docs/                     Architecture infra, runbook d'exploitation, contrats d'intégration
 secrets/ backups/ reports/  Données locales (non versionnées)
 ```

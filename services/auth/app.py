@@ -59,7 +59,12 @@ def ready():
     return {"status": "ready"}
 
 
-@app.post("/auth/login")
+@app.get("/api/auth/ready")
+def api_ready():
+    return ready()
+
+
+@app.post("/api/auth/login")
 def login(creds: Credentials):
     with pool.connection() as conn:
         row = conn.execute(

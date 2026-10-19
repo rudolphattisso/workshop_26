@@ -1,0 +1,25 @@
+# Après « up » : (ré)installe les règles de détection custom dans le manager et recharge.
+# Nécessaire aux mises à jour (le manager ne copie /wazuh-config-mount qu'au 1er démarrage).
+- name: "Wazuh | Attendre que le manager réponde"
+  ansible.builtin.command: docker exec {{ compose_project }}-wazuh.manager-1 /var/ossec/bin/wazuh-control status
+  register: wz_status
+  retries: 18
+  delay: 5
+  until: "'wazuh-analysisd is running' in wz_status.stdout"
+  # wazuh-control status sort en code != 0 si un démon optionnel (clusterd, maild...) est
+  # arrêté : c'est normal en mono-nœud. On ne se fie qu'à la présence d'analysisd.
+  failed_when: false
+  changed_when: false
+
+- name: "Wazuh | Installer les règles de détection custom et recharger"
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - "{{ compose_project }}-wazuh.manager-1"
+      - sh
+      - -c
+      - "cp /wazuh-config-mount/etc/rules/local_rules.xml /var/ossec/etc/rules/local_rules.xml && chown wazuh:wazuh /var/ossec/etc/rules/local_rules.xml && /var/ossec/bin/wazuh-control restart"
+  register: wz_rules
+  changed_when: true
+  failed_when: wz_rules.rc != 0 and 'Completed' not in wz_rules.stdout

@@ -1,8 +1,0 @@
-# Journal d'accès JSON (une ligne = un événement) -> stdout -> Alloy -> Loki
-log_format json_access escape=json '{"ts":"$time_iso8601","service":"waf","msg":"access",'
-  '"client_ip":"$remote_addr","method":"$request_method","uri":"$request_uri","status":$status,'
-  '"bytes":$body_bytes_sent,"duration_s":$request_time,"upstream":"$upstream_addr",'
-  '"upstream_status":"$upstream_status","request_id":"$request_id","user_agent":"$http_user_agent"}';
-
-access_log /dev/stdout json_access;
-error_log  /dev/stderr ${LOGLEVEL};

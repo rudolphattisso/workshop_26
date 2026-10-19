@@ -66,7 +66,12 @@ def ready():
     return {"status": "ready"}
 
 
-@app.post("/payments", status_code=201)
+@app.get("/api/payments/ready")
+def api_ready():
+    return ready()
+
+
+@app.post("/api/payments", status_code=201)
 def create_payment(body: PaymentIn, user=Depends(current_user)):
     status = "ACCEPTED" if body.amount <= MAX_AMOUNT else "REJECTED"
     tx_id = str(uuid.uuid4())
@@ -84,7 +89,7 @@ def create_payment(body: PaymentIn, user=Depends(current_user)):
     return {"id": tx_id, "status": status, "amount": str(body.amount), "currency": body.currency}
 
 
-@app.get("/payments")
+@app.get("/api/payments")
 def list_payments(limit: int = 20, user=Depends(current_user)):
     limit = max(1, min(limit, 100))
     with pool.connection() as conn:
@@ -100,7 +105,7 @@ def list_payments(limit: int = 20, user=Depends(current_user)):
     ]
 
 
-@app.get("/payments/{tx_id}")
+@app.get("/api/payments/{tx_id}")
 def get_payment(tx_id: uuid.UUID, user=Depends(current_user)):
     with pool.connection() as conn:
         row = conn.execute(

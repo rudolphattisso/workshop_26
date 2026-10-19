@@ -6,6 +6,7 @@
   tasks:
     - ansible.builtin.import_tasks: ../tasks/preflight.yml
     - ansible.builtin.import_tasks: ../tasks/secrets.yml
+    - ansible.builtin.import_tasks: ../tasks/wazuh_prepare.yml
 
     - name: "Validation | Syntaxe du fichier Compose"
       ansible.builtin.command: "{{ compose }} config --quiet"
@@ -31,9 +32,10 @@
       changed_when: "'Built' in build.stderr or 'naming to' in build.stderr"
 
     - name: "Run | Démarrage / convergence des conteneurs (attente des healthchecks)"
-      ansible.builtin.command: "{{ compose }} up -d --remove-orphans --wait --wait-timeout 180"
+      ansible.builtin.command: "{{ compose }} up -d --remove-orphans --wait --wait-timeout 360"
       register: up
       changed_when: "'Started' in up.stderr or 'Recreated' in up.stderr or 'Created' in up.stderr"
 
     - ansible.builtin.import_tasks: ../tasks/attach_controller.yml
+    - ansible.builtin.import_tasks: ../tasks/wazuh_postdeploy.yml
     - ansible.builtin.import_tasks: ../tasks/verify.yml

@@ -49,6 +49,12 @@ networks:
     ipam: { config: [{ subnet: 172.30.60.0/24 }] }
   mgmt:         # interfaces d'admin publiées sur 127.0.0.1 uniquement
     ipam: { config: [{ subnet: 172.30.70.0/24 }] }
+  bw-universe:  # plan de contrôle BunkerWeb : scheduler <-> instance (API interne)
+    internal: true
+    ipam: { config: [{ subnet: 172.30.80.0/24 }] }
+  siem:         # Wazuh : manager <-> indexer <-> dashboard, et agents -> manager (1514/1515)
+    internal: true
+    ipam: { config: [{ subnet: 172.30.90.0/24 }] }
 
 volumes:
   pgdata:
@@ -57,6 +63,22 @@ volumes:
   loki-data:
   grafana-data:
   alloy-data:
+  bw-data:
+  wazuh_api_configuration:
+  wazuh_etc:
+  wazuh_logs:
+  wazuh_queue:
+  wazuh_var_multigroups:
+  wazuh_integrations:
+  wazuh_active_response:
+  wazuh_agentless:
+  wazuh_wodles:
+  filebeat_etc:
+  filebeat_var:
+  wazuh-indexer-data:
+  wazuh-dashboard-config:
+  wazuh-dashboard-custom:
+  agent-logs:
 
 # -----------------------------------------------------------------------------
 # Secrets : fichiers générés localement par Ansible (playbook secrets.yml) dans
@@ -77,37 +99,74 @@ services:
   # ===========================================================================
   #  SI DE PAIEMENT
   # ===========================================================================
-  waf:
+  # WAF = BunkerWeb (nginx + ModSecurity + OWASP CRS + bad-behavior auto-ban + rate-limit).
+  # Point d'entrée UNIQUE. Deux conteneurs :
+  #   - bunkerweb          : plan de données (reçoit le trafic, applique les règles)
+  #   - bunkerweb-scheduler: plan de contrôle (porte TOUS les réglages, génère la conf,
+  #                          télécharge/maj l'OWASP CRS, pousse vers l'instance via l'API)
+  bunkerweb:
     <<: *hardening
-    image: ${WAF_IMAGE:-owasp/modsecurity-crs:4.25.2-nginx-alpine-lts}
+    image: ${WAF_IMAGE:-bunkerity/bunkerweb:1.6.16}
     ports:
       - "${PUBLIC_BIND_ADDR:-0.0.0.0}:${PUBLIC_HTTP_PORT:-80}:8080"
     environment:
-      PORT: "8080"
-      BACKEND: http://frontend:8080          # requis par l'image, routage réel dans default.conf
-      METRICS_ALLOW_FROM: 172.30.40.0/24     # stub_status : réseau monitoring uniquement
-      LOGLEVEL: warn
-      BLOCKING_PARANOIA: ${WAF_PARANOIA:-1}
-      ANOMALY_INBOUND: ${WAF_ANOMALY_INBOUND:-5}
-      MODSEC_RULE_ENGINE: ${WAF_RULE_ENGINE:-On}   # On = bloque, DetectionOnly = journalise
-      MODSEC_AUDIT_LOG: /dev/stdout
-      MODSEC_AUDIT_LOG_FORMAT: JSON
-      WAF_API_RATE: ${WAF_API_RATE:-20r/s}
-      WAF_API_BURST: ${WAF_API_BURST:-40}
-      WAF_LOGIN_RATE: ${WAF_LOGIN_RATE:-5r/s}
-      WAF_LOGIN_BURST: ${WAF_LOGIN_BURST:-10}
-    volumes:
-      - ./infra/waf/default.conf.template:/etc/nginx/templates/conf.d/default.conf.template:ro
-      - ./infra/waf/logging.conf.template:/etc/nginx/templates/conf.d/logging.conf.template:ro
-    networks: [edge, app, monitoring]
+      AUTOCONF_MODE: "no"
+      API_WHITELIST_IP: "127.0.0.0/8 172.30.80.0/24"   # API interne : réseau bw-universe seulement
+      API_TOKEN: ${BW_API_TOKEN:-changeme-bw-token}
+    networks: [edge, app, monitoring, bw-universe]
     depends_on: [frontend]
     labels: { resilience.tier: edge }
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz || exit 1"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-    deploy: { resources: { limits: { memory: 256m, cpus: "1.0" } } }
+    deploy: { resources: { limits: { memory: 384m, cpus: "1.0" } } }
+
+  bunkerweb-scheduler:
+    image: ${WAF_SCHEDULER_IMAGE:-bunkerity/bunkerweb-scheduler:1.6.16}
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      BUNKERWEB_INSTANCES: "bunkerweb"
+      API_TOKEN: ${BW_API_TOKEN:-changeme-bw-token}
+      # Accès : liste des noms d'hôte acceptés (ajouter l'IP du hotspot pour la démo via .env)
+      SERVER_NAME: ${PUBLIC_SERVER_NAME:-localhost 127.0.0.1 bunkerweb}
+      MULTISITE: "no"
+      USE_REAL_IP: "no"
+      MAX_CLIENT_SIZE: "256k"
+      LOG_LEVEL: "notice"
+      # --- Reverse proxy : routage vers les microservices (/api/* -> back-ends) ---
+      # Hôtes sans chemin -> nginx transmet l'URI d'origine telle quelle au back-end
+      # (les services exposent leurs routes publiques sous /api/auth et /api/payments).
+      USE_REVERSE_PROXY: "yes"
+      REVERSE_PROXY_URL: "/"
+      REVERSE_PROXY_HOST: "http://frontend:8080"
+      REVERSE_PROXY_URL_1: "/api/auth"
+      REVERSE_PROXY_HOST_1: "http://auth:8000"
+      REVERSE_PROXY_URL_2: "/api/payments"
+      REVERSE_PROXY_HOST_2: "http://payment-api:8000"
+      # --- WAF : ModSecurity + OWASP CRS v4 (bloque XSS, SQLi...) ---
+      USE_MODSECURITY: "yes"
+      USE_MODSECURITY_CRS: "yes"
+      MODSECURITY_CRS_VERSION: "4"
+      MODSECURITY_SEC_RULE_ENGINE: ${WAF_RULE_ENGINE:-On}   # On = bloque / DetectionOnly = journalise (démo avant/après)
+      # --- Anti-DoS : limitation de débit + bannissement automatique des IP "bad behavior" ---
+      USE_LIMIT_REQ: "yes"
+      LIMIT_REQ_URL: "/"
+      LIMIT_REQ_RATE: ${WAF_API_RATE:-20r/s}
+      LIMIT_REQ_URL_1: "= /api/auth/login"
+      LIMIT_REQ_RATE_1: ${WAF_LOGIN_RATE:-5r/s}
+      USE_BAD_BEHAVIOR: "yes"
+      BAD_BEHAVIOR_STATUS_CODES: "400 401 403 404 405 429 444"
+      BAD_BEHAVIOR_THRESHOLD: ${WAF_BADBEHAVIOR_THRESHOLD:-20}
+      BAD_BEHAVIOR_COUNT_TIME: "60"
+      BAD_BEHAVIOR_BAN_TIME: ${WAF_BAN_TIME:-300}
+      # --- Métriques internes (l'export Prometheus est une option PRO) ---
+      # On supervise le WAF via blackbox (disponibilité) et via Loki (débit, blocages,
+      # bannissements) : voir infra/loki/rules et le dashboard Grafana.
+      USE_METRICS: "yes"
+    volumes:
+      - bw-data:/data
+    networks: [bw-universe]
+    depends_on: [bunkerweb]
+    labels: { resilience.tier: edge }
+    deploy: { resources: { limits: { memory: 384m, cpus: "1.0" } } }
 
   frontend:
     <<: *hardening
@@ -282,13 +341,7 @@ services:
     labels: { resilience.tier: observability }
     deploy: { resources: { limits: { memory: 64m, cpus: "0.25" } } }
 
-  waf-exporter:
-    <<: *hardening
-    image: nginx/nginx-prometheus-exporter:1.4.2
-    command: ["--nginx.scrape-uri=http://waf:8080/metrics/nginx"]
-    networks: [monitoring]
-    labels: { resilience.tier: observability }
-    deploy: { resources: { limits: { memory: 32m, cpus: "0.25" } } }
+  # (waf-exporter supprimé : BunkerWeb expose nativement /metrics sur :9113)
 
   postgres-exporter:
     <<: *hardening
@@ -328,12 +381,12 @@ services:
     build: { context: ./services, args: { SERVICE: txprobe } }
     image: resilience/txprobe:${APP_VERSION:-1.0.0}
     environment:
-      PROBE_TARGET: http://waf:8080
+      PROBE_TARGET: http://bunkerweb:8080
       PROBE_INTERVAL_SECONDS: "5"
       PROBE_USERNAME: synthetic-probe
     secrets: [probe_user_password]
     networks: [app, monitoring]
-    depends_on: [waf]
+    depends_on: [bunkerweb]
     labels: { resilience.tier: observability }
     deploy: { resources: { limits: { memory: 128m, cpus: "0.25" } } }
 
@@ -348,7 +401,7 @@ services:
       DOCKER_API: http://docker-proxy:2375
       COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME:-resilience}
       TXPROBE_URL: http://txprobe:8000
-      REMEDIATION_ALLOWED_TARGETS: waf,frontend,auth,payment-api,postgres
+      REMEDIATION_ALLOWED_TARGETS: bunkerweb,frontend,auth,payment-api,postgres
       REMEDIATION_COOLDOWN_SECONDS: "${REMEDIATION_COOLDOWN_SECONDS:-45}"
       REMEDIATION_VERIFY_TIMEOUT_SECONDS: "90"
     secrets: [remediation_token]
@@ -396,3 +449,148 @@ services:
     restart: unless-stopped
     labels: { resilience.tier: observability }
     deploy: { resources: { limits: { memory: 64m, cpus: "0.25" } } }
+
+  # ===========================================================================
+  #  SIEM — Wazuh (manager + indexer OpenSearch + dashboard)
+  #  Plan de sécurité : reçoit les évènements des agents (un par conteneur applicatif),
+  #  corrèle via les règles Wazuh, indexe dans OpenSearch, visualise dans le dashboard.
+  #  Réseau 'siem' interne ; dashboard publié sur 127.0.0.1 uniquement.
+  #  Certificats générés par Ansible (tasks/wazuh_certs.yml) dans infra/wazuh/config/
+  #  wazuh_indexer_ssl_certs/ (non versionnés).
+  # ===========================================================================
+  wazuh.manager:
+    image: wazuh/wazuh-manager:4.14.9
+    hostname: wazuh.manager
+    restart: unless-stopped
+    logging: *logging
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile: { soft: 655360, hard: 655360 }
+    environment:
+      INDEXER_URL: https://wazuh.indexer:9200
+      INDEXER_USERNAME: admin
+      INDEXER_PASSWORD: ${WAZUH_INDEXER_PASSWORD:?défini par ops deploy dans .env}
+      FILEBEAT_SSL_VERIFICATION_MODE: full
+      SSL_CERTIFICATE_AUTHORITIES: /etc/ssl/root-ca.pem
+      SSL_CERTIFICATE: /etc/ssl/filebeat.pem
+      SSL_KEY: /etc/ssl/filebeat.key
+      API_USERNAME: wazuh-wui
+      API_PASSWORD: ${WAZUH_API_PASSWORD:?défini par ops deploy dans .env}
+    volumes:
+      - wazuh_api_configuration:/var/ossec/api/configuration
+      - wazuh_etc:/var/ossec/etc
+      - wazuh_logs:/var/ossec/logs
+      - wazuh_queue:/var/ossec/queue
+      - wazuh_var_multigroups:/var/ossec/var/multigroups
+      - wazuh_integrations:/var/ossec/integrations
+      - wazuh_active_response:/var/ossec/active-response/bin
+      - wazuh_agentless:/var/ossec/agentless
+      - wazuh_wodles:/var/ossec/wodles
+      - filebeat_etc:/etc/filebeat
+      - filebeat_var:/var/lib/filebeat
+      - ./infra/wazuh/config/wazuh_indexer_ssl_certs/root-ca-manager.pem:/etc/ssl/root-ca.pem:ro
+      - ./infra/wazuh/config/wazuh_indexer_ssl_certs/wazuh.manager.pem:/etc/ssl/filebeat.pem:ro
+      - ./infra/wazuh/config/wazuh_indexer_ssl_certs/wazuh.manager-key.pem:/etc/ssl/filebeat.key:ro
+      - ./infra/wazuh/config/wazuh_cluster/wazuh_manager.conf:/wazuh-config-mount/etc/ossec.conf:ro
+      - ./infra/wazuh/config/wazuh_cluster/local_rules.xml:/wazuh-config-mount/etc/rules/local_rules.xml:ro
+    networks:
+      siem:
+        aliases: [wazuh.manager]
+    labels: { resilience.tier: siem }
+    deploy: { resources: { limits: { memory: 1g, cpus: "1.5" } } }
+
+  wazuh.indexer:
+    image: wazuh/wazuh-indexer:4.14.9
+    hostname: wazuh.indexer
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      OPENSEARCH_JAVA_OPTS: "-Xms${WAZUH_INDEXER_HEAP:-1g} -Xmx${WAZUH_INDEXER_HEAP:-1g}"
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile: { soft: 65536, hard: 65536 }
+    volumes:
+      - wazuh-indexer-data:/var/lib/wazuh-indexer
+      - ./infra/wazuh/config/wazuh_indexer_ssl_certs/root-ca.pem:/usr/share/wazuh-indexer/config/certs/root-ca.pem:ro
+      - ./infra/wazuh/config/wazuh_indexer_ssl_certs/wazuh.indexer-key.pem:/usr/share/wazuh-indexer/config/certs/wazuh.indexer.key:ro
+      - ./infra/wazuh/config/wazuh_indexer_ssl_certs/wazuh.indexer.pem:/usr/share/wazuh-indexer/config/certs/wazuh.indexer.pem:ro
+      - ./infra/wazuh/config/wazuh_indexer_ssl_certs/admin.pem:/usr/share/wazuh-indexer/config/certs/admin.pem:ro
+      - ./infra/wazuh/config/wazuh_indexer_ssl_certs/admin-key.pem:/usr/share/wazuh-indexer/config/certs/admin-key.pem:ro
+      - ./infra/wazuh/config/wazuh_indexer/wazuh.indexer.yml:/usr/share/wazuh-indexer/config/opensearch.yml:ro
+      - ./infra/wazuh/config/wazuh_indexer/internal_users.yml:/usr/share/wazuh-indexer/config/opensearch-security/internal_users.yml:ro
+    networks:
+      siem:
+        aliases: [wazuh.indexer]
+    labels: { resilience.tier: siem }
+    deploy: { resources: { limits: { memory: 2g, cpus: "2.0" } } }
+
+  wazuh.dashboard:
+    image: wazuh/wazuh-dashboard:4.14.9
+    hostname: wazuh.dashboard
+    restart: unless-stopped
+    logging: *logging
+    ports:
+      - "${ADMIN_BIND_ADDR:-127.0.0.1}:${WAZUH_DASHBOARD_PORT:-8443}:5601"
+    environment:
+      INDEXER_USERNAME: admin
+      INDEXER_PASSWORD: ${WAZUH_INDEXER_PASSWORD:?défini par ops deploy dans .env}
+      WAZUH_API_URL: https://wazuh.manager
+      DASHBOARD_USERNAME: kibanaserver
+      DASHBOARD_PASSWORD: ${WAZUH_DASHBOARD_PASSWORD:?défini par ops deploy dans .env}
+      API_USERNAME: wazuh-wui
+      API_PASSWORD: ${WAZUH_API_PASSWORD:?défini par ops deploy dans .env}
+    volumes:
+      - ./infra/wazuh/config/wazuh_indexer_ssl_certs/wazuh.dashboard.pem:/usr/share/wazuh-dashboard/certs/wazuh-dashboard.pem:ro
+      - ./infra/wazuh/config/wazuh_indexer_ssl_certs/wazuh.dashboard-key.pem:/usr/share/wazuh-dashboard/certs/wazuh-dashboard-key.pem:ro
+      - ./infra/wazuh/config/wazuh_indexer_ssl_certs/root-ca.pem:/usr/share/wazuh-dashboard/certs/root-ca.pem:ro
+      - ./infra/wazuh/config/wazuh_dashboard/opensearch_dashboards.yml:/usr/share/wazuh-dashboard/config/opensearch_dashboards.yml:ro
+      - ./infra/wazuh/config/wazuh_dashboard/wazuh.yml:/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml:ro
+      - wazuh-dashboard-config:/usr/share/wazuh-dashboard/data/wazuh/config
+      - wazuh-dashboard-custom:/usr/share/wazuh-dashboard/plugins/wazuh/public/assets/custom
+    networks:
+      siem:
+        aliases: [wazuh.dashboard]
+      mgmt:
+    depends_on: [wazuh.indexer, wazuh.manager]
+    labels: { resilience.tier: siem }
+    deploy: { resources: { limits: { memory: 1g, cpus: "1.0" } } }
+
+  # Log-forwarder : alimente l'agent Wazuh avec les journaux des conteneurs (voir services/logshipper)
+  logshipper:
+    <<: *hardening
+    build: { context: ./services, dockerfile: logshipper/Dockerfile }
+    image: resilience/logshipper:${APP_VERSION:-1.0.0}
+    read_only: true
+    tmpfs: ["/tmp:size=8m"]
+    environment:
+      DOCKER_API: http://docker-proxy-ro:2375
+      COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME:-resilience}
+      OUT_DIR: /var/log/agent
+    volumes:
+      - agent-logs:/var/log/agent
+    networks: [dockerapi-ro]
+    depends_on: [docker-proxy-ro]
+    labels: { resilience.tier: siem }
+    deploy: { resources: { limits: { memory: 96m, cpus: "0.5" } } }
+
+  # Agent Wazuh unique (surveille toute la plateforme) : FIM, rootcheck, SCA, analyse des
+  # journaux. Ne modifie AUCUN conteneur applicatif (durcissement préservé).
+  wazuh-agent:
+    image: wazuh/wazuh-agent:4.14.9
+    hostname: consortium-host
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      WAZUH_MANAGER: wazuh.manager
+      WAZUH_AGENT_NAME: consortium-host
+    volumes:
+      - ./infra/wazuh/config/wazuh_agent/ossec.conf:/wazuh-config-mount/etc/ossec.conf:ro
+      - agent-logs:/var/log/agent:ro
+      - ./secrets:/host-secrets:ro
+      - ./infra:/host-infra:ro
+      - ./docker-compose.yml:/host-compose/docker-compose.yml:ro
+    networks:
+      siem:
+    depends_on: [wazuh.manager, logshipper]
+    labels: { resilience.tier: siem }
+    deploy: { resources: { limits: { memory: 256m, cpus: "0.5" } } }

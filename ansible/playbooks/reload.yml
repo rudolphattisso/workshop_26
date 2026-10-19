@@ -19,5 +19,5 @@
       changed_when: false
     - ansible.builtin.uri: { url: "{{ am_url }}/-/reload", method: POST }
     - name: "Reload | Loki, Alloy, Grafana, WAF : redémarrage ciblé"
-      ansible.builtin.command: "{{ compose }} restart loki alloy grafana waf"
+      ansible.builtin.command: "{{ compose }} restart loki alloy grafana bunkerweb bunkerweb-scheduler"
       changed_when: true

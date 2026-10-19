@@ -1,0 +1,83 @@
+# Préparation Wazuh avant « docker compose up » : certificats TLS + secrets + rendu de conf.
+- name: "Wazuh | Dossier des certificats"
+  ansible.builtin.file:
+    path: "{{ project_dir }}/infra/wazuh/config/wazuh_indexer_ssl_certs"
+    state: directory
+    mode: "0755"
+
+- name: "Wazuh | Certificats déjà présents ?"
+  ansible.builtin.stat:
+    path: "{{ project_dir }}/infra/wazuh/config/wazuh_indexer_ssl_certs/root-ca.pem"
+  register: wazuh_ca
+
+- name: "Wazuh | Génération des certificats (une seule fois)"
+  ansible.builtin.command: >-
+    docker run --rm -e CERT_TOOL_VERSION=4.14
+    -v {{ project_dir }}/infra/wazuh/config/wazuh_indexer_ssl_certs:/certificates
+    -v {{ project_dir }}/infra/wazuh/config/certs.yml:/config/certs.yml:ro
+    wazuh/wazuh-certs-generator:0.0.4
+  when: not wazuh_ca.stat.exists
+  changed_when: true
+
+# Mots de passe internes Wazuh : générés ALÉATOIREMENT dans .env (non versionné), jamais
+# en clair dans le dépôt. Les hachages bcrypt correspondants sont rendus dans internal_users.yml
+# (également non versionné) à partir du template. Idempotent : générés une seule fois.
+- name: "Wazuh | Générer les mots de passe internes dans .env (si absents)"
+  ansible.builtin.lineinfile:
+    path: "{{ project_dir }}/.env"
+    line: "{{ item }}={{ lookup('ansible.builtin.password', '/dev/null', length=24, chars=['ascii_letters', 'digits']) }}"
+    regexp: "^{{ item }}="
+    create: true
+    mode: "0600"
+  loop: [WAZUH_INDEXER_PASSWORD, WAZUH_API_PASSWORD, WAZUH_DASHBOARD_PASSWORD]
+  no_log: true
+
+- name: "Wazuh | Relire les mots de passe générés"
+  ansible.builtin.set_fact:
+    wazuh_indexer_password: "{{ lookup('ansible.builtin.ini', 'WAZUH_INDEXER_PASSWORD', file=project_dir ~ '/.env', type='properties') }}"
+    wazuh_api_password: "{{ lookup('ansible.builtin.ini', 'WAZUH_API_PASSWORD', file=project_dir ~ '/.env', type='properties') }}"
+    wazuh_dashboard_password: "{{ lookup('ansible.builtin.ini', 'WAZUH_DASHBOARD_PASSWORD', file=project_dir ~ '/.env', type='properties') }}"
+  no_log: true
+
+- name: "Wazuh | internal_users.yml déjà rendu ?"
+  ansible.builtin.stat:
+    path: "{{ project_dir }}/infra/wazuh/config/wazuh_indexer/internal_users.yml"
+  register: wazuh_iu
+
+- name: "Wazuh | Calculer les hachages bcrypt (admin, kibanaserver)"
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --entrypoint
+      - bash
+      - wazuh/wazuh-indexer:4.14.9
+      - -lc
+      - "export OPENSEARCH_JAVA_HOME=/usr/share/wazuh-indexer/jdk; /usr/share/wazuh-indexer/plugins/opensearch-security/tools/hash.sh -p '{{ item }}' 2>/dev/null | grep -E '^\\$2[aby]\\$' | tail -1"
+  loop:
+    - "{{ wazuh_indexer_password }}"
+    - "{{ wazuh_dashboard_password }}"
+  register: wazuh_hashes
+  changed_when: false
+  when: not wazuh_iu.stat.exists
+  no_log: true
+
+- name: "Wazuh | Rendre internal_users.yml (hachages uniquement, pas de mot de passe en clair)"
+  ansible.builtin.copy:
+    dest: "{{ project_dir }}/infra/wazuh/config/wazuh_indexer/internal_users.yml"
+    content: >-
+      {{ lookup('ansible.builtin.file', project_dir ~ '/infra/wazuh/config/wazuh_indexer/internal_users.yml.template')
+         | replace('__ADMIN_HASH__', wazuh_hashes.results[0].stdout)
+         | replace('__KIBANASERVER_HASH__', wazuh_hashes.results[1].stdout) }}
+    mode: "0644"
+  when: not wazuh_iu.stat.exists
+  no_log: true
+
+- name: "Wazuh | Rendre wazuh.yml (dashboard -> API) depuis le template"
+  ansible.builtin.copy:
+    dest: "{{ project_dir }}/infra/wazuh/config/wazuh_dashboard/wazuh.yml"
+    content: "{{ lookup('ansible.builtin.file', project_dir ~ '/infra/wazuh/config/wazuh_dashboard/wazuh.yml.template') | replace('__WAZUH_API_PASSWORD__', wazuh_api_password) }}"
+    mode: "0644"
+    unsafe_writes: true   # fichier monté dans le conteneur dashboard : écriture en place
+  no_log: true

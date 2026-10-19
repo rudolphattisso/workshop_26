@@ -1,15 +1,41 @@
 # Règles évaluées par le ruler Loki sur les journaux (fonction SOC / SIEM léger).
 # Les alertes partent vers le même Alertmanager que celles de Prometheus.
+# Source principale : les journaux de BunkerWeb (accès + ModSecurity + bad-behavior).
 groups:
   - name: security-logs
     rules:
-      - alert: WafAttackBurst
-        expr: sum(count_over_time({service="waf"} |= "ModSecurity" [1m])) > 20
+      # --- Attaque applicative (XSS, SQLi...) bloquée par ModSecurity / OWASP CRS ---
+      - alert: WafAttackBlocked
+        expr: sum(count_over_time({service="bunkerweb"} |= "ModSecurity" |= "Access denied" [1m])) > 5
         for: 0s
-        labels: { severity: major, remediation: none, source: loki }
+        labels: { severity: major, remediation: none, source: loki, kind: waf_block }
         annotations:
-          summary: "Plus de 20 requêtes bloquées/détectées par le WAF en 1 min"
+          summary: "ModSecurity a bloqué plus de 5 requêtes malveillantes en 1 min (XSS/SQLi...)"
 
+      - alert: XssAttackDetected
+        expr: sum(count_over_time({service="bunkerweb"} |= "attack-xss" [1m])) > 0
+        for: 0s
+        labels: { severity: major, remediation: none, source: loki, kind: xss }
+        annotations:
+          summary: "Tentative d'injection XSS détectée et bloquée par le WAF"
+
+      # --- DDoS / flood applicatif : volume de requêtes anormal au point d'entrée ---
+      - alert: RequestFlood
+        expr: sum(count_over_time({service="bunkerweb"} |~ ` HTTP/[0-9.]+" ` [1m])) > 300
+        for: 0s
+        labels: { severity: major, remediation: none, source: loki, kind: ddos }
+        annotations:
+          summary: "Volume de requêtes anormal au WAF (> 300 req/min) : DDoS applicatif probable"
+
+      # --- Réponse automatique du WAF : bannissement d'IP (bad behavior) ---
+      - alert: WafAutoBan
+        expr: sum(count_over_time({service="bunkerweb"} |~ "BADBEHAVIOR" |= "banned" [1m])) > 0
+        for: 0s
+        labels: { severity: major, remediation: none, source: loki, kind: ban }
+        annotations:
+          summary: "BunkerWeb a banni automatiquement une IP (bad behavior / flood)"
+
+      # --- Force brute sur l'authentification ---
       - alert: LoginBruteForce
         expr: sum(count_over_time({service="auth"} |= "login_failed" [1m])) > 10
         for: 0s
@@ -17,6 +43,7 @@ groups:
         annotations:
           summary: "Plus de 10 échecs de connexion en 1 min (force brute probable)"
 
+      # --- Échec de remédiation : nécessite une intervention humaine (PRA) ---
       - alert: RemediationFailed
         expr: sum(count_over_time({service="remediation"} |= "remediation_failed" [5m])) > 0
         for: 0s

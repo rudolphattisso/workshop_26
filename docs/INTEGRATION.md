@@ -94,11 +94,16 @@ requêtes utiles : `synthetic_transaction_success`, `probe_success`, `ALERTS{ale
 
 | Sujet | Où / comment |
 |---|---|
-| Règles WAF | variables `WAF_*` dans `.env` ; exclusions CRS : monter un fichier dans `/etc/modsecurity.d/owasp-crs/rules/` |
-| Mode détection seule | `WAF_RULE_ENGINE=DetectionOnly` |
-| SIEM / SOC | règles LogQL dans `infra/loki/rules/fake/security.yml` (alertes → Alertmanager) ; panneaux « Sécurité » du dashboard |
+| WAF (BunkerWeb) | réglages dans `docker-compose.yml` (service `bunkerweb-scheduler`) et `.env` (`WAF_*`) ; config poussée par le scheduler. Settings BunkerWeb complets : https://docs.bunkerweb.io |
+| Règles / exclusions CRS | `MODSECURITY_CRS_VERSION`, exclusions via un `bw-plugin`/config custom montée dans le scheduler |
+| Mode détection seule (démo avant/après) | `WAF_RULE_ENGINE=DetectionOnly` dans `.env` puis `ops reload` |
+| Anti-DoS | `USE_LIMIT_REQ` (débit) + `USE_BAD_BEHAVIOR` (auto-ban) : `WAF_API_RATE`, `WAF_BADBEHAVIOR_THRESHOLD`, `WAF_BAN_TIME` |
+| SOC léger (temps réel) | règles LogQL `infra/loki/rules/fake/security.yml` (→ Alertmanager) ; section « Sécurité » du dashboard Grafana |
+| SIEM (Wazuh) | règles de détection `infra/wazuh/config/wazuh_cluster/local_rules.xml` (plage 100000+) ; conf agent `infra/wazuh/config/wazuh_agent/ossec.conf` ; dashboard `https://127.0.0.1:8443`. `ops reload` recharge les règles. |
+| Nouveaux signaux pour Wazuh | ajouter un `<localfile>` dans l'ossec.conf de l'agent (le forwarder écrit déjà tous les journaux dans `/var/log/agent/<service>.log`) |
 | Secrets (SOPS/Vault) | alimenter `secrets/<nom>` par `sops -d` ou un agent Vault avant `deploy` ; aucun autre changement |
 | Surface exposée | seul le WAF (port 80) est joignable depuis le PC Attaquant |
-| Logs d'investigation | journaux d'accès JSON du WAF (IP, URI, statut, request_id) + audit ModSecurity JSON |
+| Logs d'investigation | accès JSON + audit ModSecurity de BunkerWeb (Loki) ; alertes corrélées et historisées (Wazuh) |
+| Banc d'attaque de démo | `attack/attack.py` (xss / ddos / probe) + `attack/run_demo.sh` |
 
 Cibles légitimes du PC Attaquant : **uniquement** `http://192.168.137.1/` (IP du PC Hôte du groupe).

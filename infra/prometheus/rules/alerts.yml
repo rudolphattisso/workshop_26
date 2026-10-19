@@ -5,12 +5,14 @@
 groups:
   - name: availability
     rules:
+      # BunkerWeb est le point d'entrée unique : s'il tombe, TOUTES les sondes qui passent
+      # par lui échouent en même temps. On distingue ce cas d'une panne d'un seul back-end.
       - alert: WafDown
-        expr: nginx_up == 0 or absent(nginx_up)
+        expr: count(probe_success{service=~"frontend|auth|payment-api"} == 0) == count(probe_success{service=~"frontend|auth|payment-api"})
         for: 10s
-        labels: { severity: critical, remediation: restart, target: waf }
+        labels: { severity: critical, remediation: restart, target: bunkerweb }
         annotations:
-          summary: "Le WAF (point d'entrée unique) ne répond plus"
+          summary: "Le WAF BunkerWeb (point d'entrée unique) ne répond plus"
 
       - alert: PaymentApiUnavailable
         expr: probe_success{service="payment-api"} == 0
@@ -74,12 +76,8 @@ groups:
         annotations:
           summary: "Latence p95 de l'API de paiement > 1 s"
 
-      - alert: RequestFlood
-        expr: sum(rate(nginx_http_requests_total[1m])) > 50
-        for: 20s
-        labels: { severity: major, remediation: none }
-        annotations:
-          summary: "Volume de requêtes anormal sur le WAF ({{ $value | printf \"%.0f\" }} req/s)"
+      # (RequestFlood / DDoS : détecté côté journaux par le ruler Loki — voir
+      #  infra/loki/rules/fake/security.yml — car l'export Prometheus du WAF est une option PRO.)
 
       - alert: ContainerMemoryPressure
         expr: |
