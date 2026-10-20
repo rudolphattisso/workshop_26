@@ -90,10 +90,10 @@
 
 **Problèmes rencontrés**
 - Le log d'accès d'Uvicorn était réactivé par la propagation des loggers : corrigé en le désactivant explicitement
-- Docker Desktop n'était pas lancé : le build de l'image reste à vérifier
+- Docker Desktop n'était pas lancé au premier essai ; build vérifié ensuite : image de 200 Mo, uid 10001, HEALTHCHECK `healthy`, `/docs` en 404
 
 **À demander aux autres domaines**
 - Infra : contexte de build `./services` pour les services Python ; scraping `/metrics` sur le port 8000
 - Infra + Cyber : mode d'action du moteur sur les conteneurs (docker-socket-proxy ou Ansible)
 
-**Prochain démarrage** : vérifier le build Docker, puis la couche de données de payment-api (modèles SQLAlchemy, migration Alembic, seed des comptes fictifs)
+**Prochain démarrage** : la couche de données de payment-api (modèles SQLAlchemy, migration Alembic, seed des comptes fictifs)
