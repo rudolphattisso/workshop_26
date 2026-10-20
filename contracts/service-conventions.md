@@ -19,6 +19,7 @@ Services Python du domaine Dev : `auth`, `payment-api`, `remediation`, `smoke-te
 - Le **healthcheck Docker** utilise `/health`. Un échec signifie qu'il faut redémarrer le conteneur.
 - Un échec de `/ready` signifie que le service tourne mais qu'une dépendance est en panne. Redémarrer ce service
   ne règle rien ; il faut traiter la dépendance.
+- `/ready` répond en **2 s maximum** même si une dépendance ne répond plus (timeout ⇒ `down`).
 - Ces endpoints ne sont **pas authentifiés** : ils restent sur le réseau interne et ne passent pas par le WAF.
 
 ## Métriques exposées
@@ -76,6 +77,7 @@ Les erreurs de validation renvoient **400** (le nom du champ, jamais la valeur r
 |---|---|---|
 | `LOG_LEVEL` | `INFO` | Niveau de log |
 | `ENABLE_DOCS` | `false` | Sert `/docs` et `/openapi.json` (développement uniquement) |
+| `READY_CHECK_TIMEOUT_SECONDS` | `2` | Durée max d'une vérification de `/ready` ; au-delà, la dépendance est `down` |
 
 Variables propres à chaque service (URL de base de données, clés…) : documentées dans son `.env.example`.
 Les secrets sont fournis par Vault ou SOPS, jamais en dur.

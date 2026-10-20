@@ -1,0 +1,16 @@
+# Base PostgreSQL pour le DÉVELOPPEMENT LOCAL et les tests du domaine Dev uniquement.
+# Le déploiement réel (docker-compose.yml racine, sauvegardes) appartient à l'Infra.
+#   docker compose -f services/compose.dev.yml --env-file services/.env up -d
+services:
+  payment-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: payment
+      POSTGRES_USER: payment_api
+      POSTGRES_PASSWORD: ${PAYMENT_DB_PASSWORD:?définir PAYMENT_DB_PASSWORD dans services/.env}
+    ports:
+      - "127.0.0.1:5433:5432" # uniquement en local, jamais sur le réseau
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payment_api -d payment"]
+      interval: 5s
+      retries: 10

@@ -16,14 +16,17 @@ COPY common /opt/common
 COPY payment-api/requirements.txt .
 RUN pip install /opt/common -r requirements.txt
 
+COPY payment-api/alembic.ini ./
+COPY payment-api/migrations ./migrations
 COPY payment-api/app ./app
+COPY --chmod=755 payment-api/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 USER app
 EXPOSE 8000
 
 # python plutôt que curl : l'image slim n'embarque pas curl
-HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"
 
-# --no-access-log : le middleware commun produit déjà un log d'accès JSON
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
+# Variable requise : DATABASE_URL (fournie par Vault/SOPS, jamais dans l'image)
+ENTRYPOINT ["docker-entrypoint.sh"]

@@ -6,7 +6,10 @@ Le moteur de remédiation s'appuie sur cette distinction pour choisir son action
 """
 
 import logging
+import os
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as CheckTimeout
 
 from fastapi import APIRouter, Response
 from fastapi.responses import JSONResponse
@@ -16,6 +19,11 @@ log = logging.getLogger("resilience.probes")
 
 # Une vérification de dépendance : renvoie normalement si tout va bien, lève une exception sinon.
 ReadyCheck = Callable[[], None]
+
+# Une sonde doit répondre vite même si une dépendance « pend » (DNS lent, réseau coupé) :
+# chaque vérification est bornée, et un dépassement compte comme une panne.
+READY_CHECK_TIMEOUT = float(os.getenv("READY_CHECK_TIMEOUT_SECONDS", "2"))
+_check_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ready-check")
 
 DEPENDENCY_UP = Gauge(
     "service_dependency_up",
@@ -36,8 +44,11 @@ def build_probe_router(service: str, ready_checks: dict[str, ReadyCheck]) -> API
         checks = {}
         for name, check in ready_checks.items():
             try:
-                check()
+                _check_executor.submit(check).result(timeout=READY_CHECK_TIMEOUT)
                 checks[name] = "ok"
+            except CheckTimeout:
+                log.warning("dependency_timeout", extra={"dependency": name, "timeout_s": READY_CHECK_TIMEOUT})
+                checks[name] = "down"
             except Exception as exc:
                 log.warning("dependency_down", extra={"dependency": name, "error": type(exc).__name__})
                 checks[name] = "down"
