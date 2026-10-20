@@ -14,6 +14,7 @@
 | **Moteur de remédiation** | `services/remediation/` | Reçoit les alertes, décide, agit, vérifie la reprise |
 | **Dashboard de supervision** | `services/dashboard/` | React + Tailwind : composants, événements, alertes, progression de la reprise |
 | **Smoke test métier** | `services/smoke-test/` | Transaction de bout en bout réutilisée par la remédiation et la démo |
+| **Socle commun** | `services/common/` | Package Python partagé : logs JSON, trace_id, probes, métriques, erreurs |
 
 Base de données : PostgreSQL (le schéma appartient au Dev, le conteneur et les sauvegardes à l'Infra).
 
@@ -26,11 +27,16 @@ On **consomme** ces briques via les contrats de `contracts/`.
 
 | Sujet | Choix | Statut |
 |-------|-------|--------|
-| Langage des services | Python 3.12 + FastAPI | proposé — ADR-DEV-0001 à valider |
-| ORM / migrations | SQLAlchemy 2 + Alembic | proposé |
-| Tests | pytest + httpx (API) · Vitest (React) | proposé |
-| Dashboard | React + Vite + Tailwind CSS | imposé |
-| Temps réel dashboard | Server-Sent Events depuis le moteur de remédiation | proposé |
+| Application | Portefeuille de paiement : clients → marchands (comptes fictifs) | acté — ADR-DEV-0001 |
+| Langage des services | Python 3.12 + FastAPI, code synchrone, Uvicorn | acté — ADR-DEV-0001 |
+| Socle commun | `services/common` : logs JSON, trace_id, health/ready/metrics, erreurs RFC 9457 | acté — ADR-DEV-0001 |
+| Base / ORM / migrations | PostgreSQL 16 · SQLAlchemy 2 · Alembic | acté — ADR-DEV-0001 |
+| Auth | Service maison, PyJWT RS256 + JWKS, argon2 | acté — ADR-DEV-0001 |
+| Paiement | Synchrone, une transaction SQL, `Idempotency-Key` | acté — ADR-DEV-0002 |
+| État du moteur de remédiation | SQLite propre au moteur (indépendant de PostgreSQL) | acté — ADR-DEV-0001 |
+| Fronts | 2 apps Vite + React + Tailwind (`web`, `dashboard`) servies par Nginx | acté — ADR-DEV-0001 |
+| Temps réel dashboard | Server-Sent Events depuis le moteur de remédiation | acté — ADR-DEV-0001 |
+| Tests | pytest + TestClient (API) · Vitest (React) | acté — ADR-DEV-0001 |
 | Action sur les conteneurs | Docker API via **docker-socket-proxy** (droits restreints) ou playbooks Ansible | **à arbitrer avec Infra/Cyber** |
 
 ---

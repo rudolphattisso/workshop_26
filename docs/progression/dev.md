@@ -65,3 +65,35 @@
 - Ports et exposition de `/health`, `/ready`, `/metrics` : à fixer par Infra + Cyber dans `contracts/network.md`
 
 **Prochain démarrage** : `contracts/alert.schema.json` et `contracts/service-conventions.md`, puis le squelette FastAPI commun et l'ADR-DEV-0001
+
+## 2026-10-20 (suite) — Stack Dev et squelette FastAPI commun
+
+**Fait**
+- Choix de la stack (ADR-DEV-0001) : portefeuille de paiement client → marchand, tout en Python/FastAPI synchrone,
+  PostgreSQL + SQLAlchemy + Alembic, auth maison RS256, SQLite pour le moteur de remédiation, 2 fronts React séparés
+- Socle commun `services/common` (`create_app`) : logs JSON, `X-Trace-Id`, métriques HTTP par route modèle,
+  `/health` `/ready` `/metrics`, erreurs RFC 9457, `/docs` désactivé par défaut
+- Squelette `services/payment-api` (FastAPI + Dockerfile non-root slim avec HEALTHCHECK)
+- Contrat `contracts/service-conventions.md`
+- 14 tests pytest au vert ; lancement local vérifié (logs JSON propres)
+
+**Fichiers créés / modifiés**
+- `docs/adr/ADR-DEV-0001-stack-dev.md`, `docs/adr/README.md`, `services/CLAUDE.md`
+- `services/common/**`, `services/payment-api/**`, `services/requirements-dev.txt`, `services/README.md`,
+  `services/.gitignore`, `services/.dockerignore`, `contracts/service-conventions.md`
+
+**Décisions techniques**
+- `X-Trace-Id` entrant accepté seulement s'il respecte `[A-Za-z0-9-]{8,64}`, pour éviter l'injection dans les logs
+- Les exceptions non prévues sont interceptées dans le middleware, ce qui garde le trace_id dans la réponse 500
+- Une erreur de validation renvoie 400 avec le nom du champ, jamais la valeur reçue
+- Le log d'accès d'Uvicorn est désactivé : il ferait doublon avec `http_request`
+
+**Problèmes rencontrés**
+- Le log d'accès d'Uvicorn était réactivé par la propagation des loggers : corrigé en le désactivant explicitement
+- Docker Desktop n'était pas lancé au premier essai ; build vérifié ensuite : image de 200 Mo, uid 10001, HEALTHCHECK `healthy`, `/docs` en 404
+
+**À demander aux autres domaines**
+- Infra : contexte de build `./services` pour les services Python ; scraping `/metrics` sur le port 8000
+- Infra + Cyber : mode d'action du moteur sur les conteneurs (docker-socket-proxy ou Ansible)
+
+**Prochain démarrage** : la couche de données de payment-api (modèles SQLAlchemy, migration Alembic, seed des comptes fictifs)
