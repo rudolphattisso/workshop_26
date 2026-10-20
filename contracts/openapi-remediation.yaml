@@ -1,0 +1,439 @@
+openapi: 3.1.0
+info:
+  title: RESILIENCE-ALPHA — Moteur de remédiation
+  version: 0.1.0
+  description: |
+    Contrat du moteur de remédiation automatique (`services/remediation`).
+    Producteur : Dev. Consommateurs : IA (envoi d'alertes), Infra (Alertmanager), Cyber (WAF / SIEM),
+    dashboard de supervision.
+
+    ## Cycle de vie d'un incident
+
+    ```
+    alerte → DETECTED → DECIDED → ACTING → VERIFYING → RESOLVED
+                                     ↑          │
+                                     └──────────┘ (vérification en échec : nouvelle tentative)
+                                                └──→ ESCALATED (après 3 tentatives)
+    ```
+
+    - **Aucune action humaine** : il n'existe aucun endpoint pour déclencher, valider ou rejouer une action.
+      Le moteur décide seul à partir de la table des playbooks (`GET /playbooks`), explicite et versionnée.
+    - **Preuve de reprise** : un incident n'est `RESOLVED` que si les trois vérifications réussissent :
+      1. `/ready` de `payment-api` et `auth` répond 200 ;
+      2. le smoke test réussit une **nouvelle transaction fictive** (login `smoke-client` → paiement de 1 €) ;
+      3. `GET /operations/consistency` de payment-api renvoie `consistent: true`.
+    - **Déduplication** : une alerte déjà reçue (même `alert_id`), ou une alerte de même `incident_type` et
+      même `target` qu'un incident ouvert ou résolu depuis moins de 120 s, est **rattachée** à cet incident.
+      Elle ne déclenche pas de nouvelle action, ce qui évite les remédiations en boucle.
+    - **Chronomètre** : `time_to_recover_seconds` = `resolved_at` − `detected_at` de la première alerte.
+    - **Surveillance intégrée (watchdog)** : le moteur sonde lui-même `/health` et `/ready` des services toutes
+      les 5 s, et la cohérence des données toutes les 30 s. Il crée ses propres alertes (`source: watchdog`).
+      C'est un filet de sécurité si la chaîne ML / Prometheus ne détecte pas l'incident.
+
+    ## Table des playbooks (v1)
+
+    | incident_type | Action | Dépend de |
+    |---|---|---|
+    | `SERVICE_DOWN` | redémarrer le conteneur `target` ; recréer le conteneur à la 2ᵉ tentative | mode d'action Docker (Infra + Cyber) |
+    | `DEPENDENCY_DOWN` | redémarrer le conteneur de base de données `target` | idem |
+    | `TRAFFIC_FLOOD` | bloquer `indicators.source_ip` au WAF (15 min), puis redémarrer `target` si `/ready` reste en échec | API de blocage du WAF (Cyber) |
+    | `BRUTE_FORCE` | bloquer `indicators.source_ip` au WAF (15 min) | idem |
+    | `TOKEN_COMPROMISE` | recréer le conteneur `auth` : nouvelle clé de signature, **tous les jetons révoqués** (ADR-DEV-0003) | mode d'action Docker |
+    | `DATA_TAMPERING` | restaurer la base `payment` depuis la dernière sauvegarde saine | procédure de restauration (Infra) |
+
+    Les erreurs suivent le format `application/problem+json` (RFC 9457). Les sondes suivent
+    `contracts/service-conventions.md`.
+
+servers:
+  - url: /
+    description: Réseau interne uniquement, port 8000 du conteneur `remediation` (voir contracts/network.md)
+
+tags:
+  - name: alerts
+    description: Réception des alertes (machines)
+  - name: incidents
+    description: Suivi des incidents (dashboard)
+  - name: probes
+    description: Conventions communes (contracts/service-conventions.md)
+
+paths:
+  # ---------------------------------------------------------------- alertes
+  /alerts:
+    post:
+      tags: [alerts]
+      summary: Signaler un incident
+      description: |
+        Point d'entrée commun de l'IA, du WAF et du SIEM. Le corps suit `contracts/alert.schema.json`.
+        Réessayer avec le même `alert_id` est sans risque (réponse 200, aucune nouvelle action).
+      security:
+        - alertToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './alert.schema.json' }
+      responses:
+        '202':
+          description: Alerte acceptée, nouvel incident ouvert. La remédiation démarre en arrière-plan.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertAccepted' }
+        '200':
+          description: Alerte rattachée à un incident existant (doublon ou cooldown) — aucune nouvelle action
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertAccepted' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /alerts/alertmanager:
+    post:
+      tags: [alerts]
+      summary: Recevoir un webhook Alertmanager (format natif v4)
+      description: |
+        Évite à l'Infra de transformer le format d'Alertmanager. Chaque alerte `firing` est convertie :
+
+        | Champ de l'alerte | Source dans Alertmanager |
+        |---|---|
+        | `alert_id` | `fingerprint` + `startsAt` |
+        | `incident_type`, `target`, `severity` | **labels** du même nom (obligatoires dans la règle Prometheus) |
+        | `summary` | annotation `summary` |
+        | `indicators.source_ip` | label `source_ip` (facultatif) |
+        | `detected_at` | `startsAt` |
+
+        Les alertes `resolved` sont ignorées : c'est le moteur qui vérifie la reprise.
+        Une alerte dont les labels sont invalides est ignorée et logguée (`alert_rejected`). Le webhook reçoit
+        quand même 200, pour qu'Alertmanager ne la renvoie pas en boucle.
+
+        Configuration côté Alertmanager :
+        `http_config: { authorization: { type: Bearer, credentials_file: /run/secrets/remediation_alert_token } }`
+      security:
+        - alertToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AlertmanagerWebhook' }
+      responses:
+        '200':
+          description: Webhook traité
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accepted, ignored]
+                properties:
+                  accepted:
+                    type: array
+                    items: { $ref: '#/components/schemas/AlertAccepted' }
+                  ignored: { type: integer, description: Alertes resolved ou invalides }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # -------------------------------------------------------------- incidents
+  /incidents:
+    get:
+      tags: [incidents]
+      summary: Lister les incidents (les plus récents d'abord)
+      security:
+        - operatorJwt: []
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/IncidentStatus' }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Incidents
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Incident' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /incidents/{incidentId}:
+    get:
+      tags: [incidents]
+      summary: Détail d'un incident, avec la chronologie de ses étapes
+      security:
+        - operatorJwt: []
+      parameters:
+        - name: incidentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Incident
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Incident' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /services:
+    get:
+      tags: [incidents]
+      summary: État des composants surveillés (dernier passage du watchdog)
+      security:
+        - operatorJwt: []
+      responses:
+        '200':
+          description: États
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ServiceStatus' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /playbooks:
+    get:
+      tags: [incidents]
+      summary: Table de décision incident_type → actions (version en vigueur)
+      security:
+        - operatorJwt: []
+      responses:
+        '200':
+          description: Playbooks
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version, playbooks]
+                properties:
+                  version: { type: string, example: '1' }
+                  playbooks:
+                    type: array
+                    items: { $ref: '#/components/schemas/Playbook' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /events:
+    get:
+      tags: [incidents]
+      summary: Flux temps réel pour le dashboard (Server-Sent Events)
+      description: |
+        Dès la connexion, le serveur envoie l'état courant : un événement `services`, puis un événement `incident`
+        par incident ouvert ou récent. Il envoie ensuite un événement à chaque changement.
+
+        | `event` | `data` (JSON) | Quand |
+        |---|---|---|
+        | `incident` | `Incident` complet | création, chaque changement d'état ou nouvelle étape |
+        | `services` | `ServiceStatus[]` | à chaque changement d'état d'un composant |
+        | `heartbeat` | `{"at": "<date-time>"}` | toutes les 15 s (garde la connexion ouverte à travers les proxys) |
+
+        `EventSource` ne permet pas d'envoyer l'en-tête `Authorization`. Le dashboard lit donc le flux avec
+        `fetch()` en streaming : jamais de jeton dans l'URL, car il finirait dans les logs. En cas de coupure,
+        il se reconnecte et reçoit à nouveau l'état complet.
+      security:
+        - operatorJwt: []
+      responses:
+        '200':
+          description: Flux d'événements
+          content:
+            text/event-stream:
+              schema: { type: string }
+              example: |
+                event: incident
+                data: {"id":"7f0c…","status":"ACTING","incident_type":"SERVICE_DOWN","target":"payment-api",…}
+
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ------------------------------------------------------------------ sondes
+  /health:
+    get:
+      tags: [probes]
+      summary: Processus vivant
+      security: []
+      responses:
+        '200': { description: OK }
+  /ready:
+    get:
+      tags: [probes]
+      summary: Prêt (état local SQLite accessible)
+      security: []
+      responses:
+        '200': { description: Prêt }
+        '503': { description: Non prêt }
+  /metrics:
+    get:
+      tags: [probes]
+      summary: Métriques Prometheus
+      description: |
+        En plus des métriques communes :
+        `remediation_incidents_total{incident_type,outcome}` (outcome = resolved | escalated),
+        `remediation_actions_total{action,result}`, `remediation_time_to_recover_seconds` (histogramme),
+        `remediation_alerts_total{source,result}` (result = accepted | deduplicated | rejected).
+      security: []
+      responses:
+        '200':
+          description: Exposition texte Prometheus
+          content:
+            text/plain:
+              schema: { type: string }
+
+components:
+  securitySchemes:
+    alertToken:
+      type: http
+      scheme: bearer
+      description: |
+        Jeton de service partagé par les émetteurs d'alertes (IA, WAF, SIEM, Alertmanager).
+        Variable `REMEDIATION_ALERT_TOKEN` côté moteur, fournie par Vault/SOPS, 32 caractères minimum.
+        Ce jeton permet seulement de **signaler** un incident : jamais de choisir l'action.
+    operatorJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT RS256 émis par le service d'auth (`contracts/openapi-payment.yaml`), rôle `operator` exigé.
+
+  responses:
+    BadRequest:
+      description: Corps invalide (non conforme à alert.schema.json)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Jeton absent ou invalide
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: Rôle operator requis
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Incident introuvable
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    IncidentStatus:
+      type: string
+      enum: [DETECTED, DECIDED, ACTING, VERIFYING, RESOLVED, ESCALATED]
+
+    AlertAccepted:
+      type: object
+      required: [alert_id, incident_id, deduplicated]
+      properties:
+        alert_id: { type: string }
+        incident_id: { type: string, format: uuid }
+        deduplicated: { type: boolean, description: true si rattachée à un incident existant }
+
+    Incident:
+      type: object
+      required: [id, incident_type, target, severity, status, playbook, attempts, alerts, steps, detected_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        incident_type: { type: string, description: Voir alert.schema.json }
+        target: { type: string }
+        severity: { type: string, enum: [warning, critical] }
+        status: { $ref: '#/components/schemas/IncidentStatus' }
+        summary: { type: string, description: Résumé de la première alerte }
+        playbook: { type: string, example: restart_container }
+        attempts: { type: integer, minimum: 0, maximum: 3 }
+        alerts:
+          type: array
+          description: Alertes rattachées (la première a ouvert l'incident)
+          items:
+            type: object
+            required: [alert_id, source, received_at]
+            properties:
+              alert_id: { type: string }
+              source: { type: string }
+              received_at: { type: string, format: date-time }
+        steps:
+          type: array
+          description: Chronologie, dans l'ordre
+          items: { $ref: '#/components/schemas/Step' }
+        verification: { $ref: '#/components/schemas/Verification' }
+        detected_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        resolved_at: { type: [string, 'null'], format: date-time }
+        time_to_recover_seconds: { type: [number, 'null'], description: resolved_at − detected_at }
+
+    Step:
+      type: object
+      required: [at, status, message]
+      properties:
+        at: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/IncidentStatus' }
+        action: { type: string, description: 'Action exécutée (restart_container, block_ip…), si applicable' }
+        ok: { type: boolean, description: Résultat de l'action ou de la vérification }
+        message: { type: string, example: 'Conteneur payment-api redémarré (2,8 s)' }
+
+    Verification:
+      type: object
+      description: Dernière vérification de reprise
+      properties:
+        ready: { type: object, additionalProperties: { type: boolean }, example: { payment-api: true, auth: true } }
+        smoke_test:
+          type: object
+          properties:
+            ok: { type: boolean }
+            payment_id: { type: [string, 'null'], format: uuid }
+            duration_ms: { type: integer }
+            error: { type: [string, 'null'] }
+        consistent: { type: boolean }
+        checked_at: { type: string, format: date-time }
+
+    ServiceStatus:
+      type: object
+      required: [name, health, ready, checked_at]
+      properties:
+        name: { type: string, example: payment-api }
+        health: { type: string, enum: [up, down] }
+        ready: { type: string, enum: [up, down, unknown] }
+        checked_at: { type: string, format: date-time }
+
+    Playbook:
+      type: object
+      required: [incident_type, actions, max_attempts]
+      properties:
+        incident_type: { type: string }
+        actions:
+          type: array
+          items: { type: string }
+          example: [restart_container, recreate_container]
+        max_attempts: { type: integer, example: 3 }
+        description: { type: string }
+
+    AlertmanagerWebhook:
+      type: object
+      description: Format webhook v4 d'Alertmanager (seuls les champs utilisés sont décrits)
+      required: [alerts]
+      properties:
+        version: { type: string, example: '4' }
+        status: { type: string, enum: [firing, resolved] }
+        alerts:
+          type: array
+          items:
+            type: object
+            required: [status, labels, startsAt, fingerprint]
+            properties:
+              status: { type: string, enum: [firing, resolved] }
+              labels: { type: object, additionalProperties: { type: string } }
+              annotations: { type: object, additionalProperties: { type: string } }
+              startsAt: { type: string, format: date-time }
+              fingerprint: { type: string }
+
+    Problem:
+      type: object
+      description: RFC 9457
+      required: [type, title, status]
+      properties:
+        type: { type: string, example: about:blank }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        trace_id: { type: string }
