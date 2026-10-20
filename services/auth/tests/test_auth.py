@@ -21,7 +21,7 @@ client = TestClient(app)
 
 
 def login(username="alice", password=TEST_PASSWORDS["DEMO_CLIENT_PASSWORD"]):
-    return client.post("/auth/login", json={"username": username, "password": password})
+    return client.post("/api/auth/login", json={"username": username, "password": password})
 
 
 def bearer(token: str) -> dict:
@@ -81,7 +81,7 @@ def test_failed_logins_are_counted():
     ],
 )
 def test_invalid_login_payload_is_400(body):
-    assert client.post("/auth/login", json=body).status_code == 400
+    assert client.post("/api/auth/login", json=body).status_code == 400
 
 
 # ------------------------------------------------------------------ /auth/me
@@ -89,13 +89,13 @@ def test_invalid_login_payload_is_400(body):
 
 def test_me_returns_identity_from_token():
     token = login().json()["access_token"]
-    response = client.get("/auth/me", headers=bearer(token))
+    response = client.get("/api/auth/me", headers=bearer(token))
     assert response.status_code == 200
     assert response.json() == {"id": str(user_id("alice")), "username": "alice", "role": "client"}
 
 
 def test_me_without_token_is_401():
-    response = client.get("/auth/me")
+    response = client.get("/api/auth/me")
     assert response.status_code == 401
     assert response.headers["WWW-Authenticate"] == "Bearer"
 
@@ -104,26 +104,26 @@ def test_tampered_token_is_401():
     header, payload, signature = login().json()["access_token"].split(".")
     # On remplace la charge utile par celle d'un opérateur : la signature ne correspond plus.
     forged_payload = jwt.utils.base64url_encode(b'{"role":"operator"}').decode()
-    assert client.get("/auth/me", headers=bearer(f"{header}.{forged_payload}.{signature}")).status_code == 401
+    assert client.get("/api/auth/me", headers=bearer(f"{header}.{forged_payload}.{signature}")).status_code == 401
 
 
 def test_token_signed_with_another_key_is_401_even_with_right_kid():
     attacker_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     token = forge(attacker_key, kid=get_signing_key().kid)
-    assert client.get("/auth/me", headers=bearer(token)).status_code == 401
+    assert client.get("/api/auth/me", headers=bearer(token)).status_code == 401
 
 
 def test_expired_token_is_401():
     past = datetime.now(timezone.utc) - timedelta(hours=1)
     token = forge(get_signing_key().private_key, get_signing_key().kid, iat=past, exp=past + timedelta(minutes=15))
-    assert client.get("/auth/me", headers=bearer(token)).status_code == 401
+    assert client.get("/api/auth/me", headers=bearer(token)).status_code == 401
 
 
 # ------------------------------------------------------------------ JWKS
 
 
 def test_jwks_publishes_only_the_public_key():
-    keys = client.get("/auth/.well-known/jwks.json").json()["keys"]
+    keys = client.get("/api/auth/.well-known/jwks.json").json()["keys"]
     assert len(keys) == 1
     assert keys[0]["kid"] == get_signing_key().kid
     assert keys[0]["alg"] == "RS256" and keys[0]["use"] == "sig"
@@ -132,7 +132,7 @@ def test_jwks_publishes_only_the_public_key():
 
 def test_other_services_can_verify_tokens_through_jwks():
     """Le contrat entre auth et payment-api : un jeton émis ici se vérifie avec la seule clé publique JWKS."""
-    store = JwksKeyStore("unused", fetch=lambda: client.get("/auth/.well-known/jwks.json").json())
+    store = JwksKeyStore("unused", fetch=lambda: client.get("/api/auth/.well-known/jwks.json").json())
     token = login().json()["access_token"]
     user = decode_access_token(token, store.get_key(token_kid(token)))
     assert user.id == user_id("alice") and user.role == "client"
@@ -182,6 +182,7 @@ def test_seed_refuses_missing_or_weak_passwords(monkeypatch):
 def test_auth_exposes_common_probes():
     assert client.get("/health").json() == {"status": "ok", "service": "auth"}
     assert client.get("/ready").json()["checks"] == {"database": "ok"}
+    assert client.get("/api/auth/ready").json()["checks"] == {"database": "ok"}  # sonde via le WAF
 
 
 def test_login_takes_comparable_time_for_unknown_user():

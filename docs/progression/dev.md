@@ -212,3 +212,42 @@
 - **Infra + Cyber** (toujours bloquant) : mode d'action sur les conteneurs ; procédure de restauration de la base `payment`
 
 **Prochain démarrage** : smoke test (`services/smoke-test`), puis moteur de remédiation v0 (watchdog + `SERVICE_DOWN`)
+
+## 2026-10-20 (soir) — Alignement sur la plateforme de l'Infra (`dev/infra-alignment`)
+
+**Contexte** : lecture de la branche `infrastructure` (Arman). Ses `services/` sont des bouche-trous ; ses choix
+d'infrastructure (WAF, secrets, noms Compose, Alertmanager, docker-proxy) fixent l'interface avec nos services.
+
+**Fait**
+- Routes publiques préfixées `/api` : `/api/auth/*`, `/api/accounts*`, `/api/payments*`, `/api/operations/*` (non publié par le WAF)
+- `create_app(public_prefix=...)` : `/health` et `/ready` aussi servis sous le préfixe (sondes boîte noire via le WAF),
+  jamais `/metrics` ; sondes enregistrées avant les routes métier (`/api/payments/ready` ≠ `/api/payments/{id}`)
+- `resilience_common.config` : secrets en `<NOM>_FILE` (`/run/secrets/…`), base en `DB_HOST/DB_NAME/DB_USER/DB_PASSWORD_FILE`
+  (`DATABASE_URL` toujours accepté en local)
+- Contrats : `openapi-payment.yaml` 0.4.0, `alert.schema.json` 0.2.0 (cibles = services Compose ; correction
+  `oneOf` → `anyOf` sur `source_ip`), `openapi-remediation.yaml` 0.2.0 (`/webhook/alertmanager`, repli sur le label
+  `remediation`, docker-proxy restart/stop/start), `service-conventions.md` 0.3
+- ADR-DEV-0005
+
+**Tests**
+- 104 tests pytest verts (common 43 · payment-api 40 · auth 21), dont 6 nouveaux pour les secrets et 3 pour les sondes publiques
+- Intégration Docker « comme chez l'Infra » (lecture seule, `cap_drop: ALL`, secrets fichiers avec `@/:`, une seule
+  instance `postgres` avec deux bases) : login → paiement `CAPTURED` → cohérence OK ; aucun secret dans `env` ;
+  base arrêtée ⇒ `/ready` 503 et `/health` 200, reprise automatique en ~1 s au retour de la base
+
+**Problèmes rencontrés**
+- `oneOf: [ipv4, ipv6]` rejetait toute IP avec un validateur qui ne vérifie pas les `format` (défaut en 2020-12) : corrigé en `anyOf`
+- Un remplacement par `sed` a cassé 4 f-strings dans les tests : détecté par pytest, corrigé
+
+**À demander — Infra (Arman)**
+- `10-init.sh` : créer seulement les rôles et les bases `payment` (propriétaire `payment_api`) et `auth` (propriétaire `auth_service`) ; les tables viennent de nos migrations Alembic. Sauvegardes sur ces deux bases
+- Compose `auth` : `DB_NAME=auth`, `DB_USER=auth_service`, `DB_PASSWORD_FILE`, `DEMO_CLIENT_PASSWORD_FILE`, `SMOKE_CLIENT_PASSWORD_FILE`, `OPERATOR_PASSWORD_FILE` ; nouveau secret `operator_password` ; retirer `jwt_secret`
+- Compose `payment-api` : `DB_NAME=payment`, `DB_USER=payment_api`, `DB_PASSWORD_FILE`, `AUTH_JWKS_URL=http://auth:8000/api/auth/.well-known/jwks.json` ; retirer `jwt_secret`
+- `build:` → `{ context: ./services, dockerfile: <service>/Dockerfile }`
+- WAF : ajouter la route `/api/accounts` → `payment-api:8000`
+- Alloy : lire le champ `event` (au lieu de `msg`) pour le label `event`
+- Règles Prometheus : label `incident_type` conseillé (ex. `DEPENDENCY_DOWN` sur `PostgresDown`)
+- **Restauration des données déclenchable par le moteur sans humain** (`DATA_TAMPERING`) : seul playbook encore bloqué
+- Au merge : retirer ses services provisoires de `services/`, rebaser sur `develop`, résoudre le doublon `README.md` / `README.MD`
+
+**Prochain démarrage** : message à Arman, puis smoke test (remplaçant de `txprobe` : `GET /check`, métrique `synthetic_transaction_success`)

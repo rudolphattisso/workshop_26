@@ -32,8 +32,10 @@ DEPENDENCY_UP = Gauge(
 )
 
 
-def build_probe_router(service: str, ready_checks: dict[str, ReadyCheck]) -> APIRouter:
-    router = APIRouter(tags=["probes"])
+def build_probe_router(
+    service: str, ready_checks: dict[str, ReadyCheck], prefix: str = "", with_metrics: bool = True
+) -> APIRouter:
+    router = APIRouter(prefix=prefix, tags=["probes"])
 
     @router.get("/health")
     def health() -> dict:
@@ -57,8 +59,9 @@ def build_probe_router(service: str, ready_checks: dict[str, ReadyCheck]) -> API
         body = {"status": "ok" if all_ok else "down", "service": service, "checks": checks}
         return JSONResponse(body, status_code=200 if all_ok else 503)
 
-    @router.get("/metrics")
-    def metrics() -> Response:
-        return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+    if with_metrics:
+        @router.get("/metrics")
+        def metrics() -> Response:
+            return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     return router

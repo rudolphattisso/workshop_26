@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: RESILIENCE-ALPHA — API métier (auth + paiements)
-  version: 0.3.0
+  version: 0.4.0
   description: |
     Contrat de l'API métier de la plateforme de paiement **fictive**.
     Producteur : Dev (`services/auth`, `services/payment-api`).
@@ -11,12 +11,17 @@ info:
     - **Montants en centimes** (entiers) pour éviter les erreurs d'arrondi des flottants. Devise unique : EUR.
     - **Paiement synchrone** : débit, crédit et statut sont écrits dans **une seule transaction SQL**
       (voir ADR-DEV-0002). Il n'y a jamais d'état intermédiaire visible.
-    - **Idempotence** : `POST /payments` exige un en-tête `Idempotency-Key`. Rejouer la même clé renvoie
+    - **Idempotence** : `POST /api/payments` exige un en-tête `Idempotency-Key`. Rejouer la même clé renvoie
       la réponse d'origine sans nouveau débit (cas d'un client qui réessaie pendant un incident).
     - **Authentification** : JWT (RS256) émis par le service d'auth, durée de vie courte. Le payment-api
       vérifie la signature avec la clé publique exposée en JWKS : aucun secret partagé entre services.
     - **Erreurs** : format `application/problem+json` (RFC 9457).
-    - `/health`, `/ready` et `/metrics` sont exposés **sur le réseau interne uniquement** (voir `contracts/network.md`).
+    - **Préfixe `/api`** : le WAF (seul point d'entrée) transmet l'URI sans la réécrire, d'où les chemins
+      `/api/auth/*` (service `auth`) et `/api/payments*`, `/api/accounts*` (service `payment-api`). ADR-DEV-0005.
+      `/api/operations/*` n'est **pas publié** par le WAF : réservé au réseau interne (moteur de remédiation).
+    - `/health`, `/ready` et `/metrics` sont servis à la racine, **sur le réseau interne uniquement**. Seul `/ready`
+      (et `/health`) est aussi publié sous le préfixe de chaque service, pour les sondes à travers le WAF :
+      `GET /api/auth/ready`, `GET /api/payments/ready`. `/metrics` n'est jamais publié.
     - Données 100 % fictives : aucun numéro de carte, IBAN réel ou donnée personnelle réelle.
 
 servers:
@@ -40,7 +45,7 @@ security:
 
 paths:
   # ---------------------------------------------------------------- auth
-  /auth/login:
+  /api/auth/login:
     post:
       tags: [auth]
       summary: Obtenir un jeton d'accès
@@ -59,7 +64,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
 
-  /auth/me:
+  /api/auth/me:
     get:
       tags: [auth]
       summary: Identité et rôle du porteur du jeton
@@ -71,7 +76,7 @@ paths:
               schema: { $ref: '#/components/schemas/User' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
-  /auth/.well-known/jwks.json:
+  /api/auth/.well-known/jwks.json:
     get:
       tags: [auth]
       summary: Clés publiques de vérification des JWT
@@ -90,7 +95,7 @@ paths:
                     items: { type: object }
 
   # ------------------------------------------------------------ accounts
-  /accounts:
+  /api/accounts:
     get:
       tags: [accounts]
       summary: Lister les comptes visibles
@@ -105,7 +110,7 @@ paths:
                 items: { $ref: '#/components/schemas/Account' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
-  /accounts/{accountId}:
+  /api/accounts/{accountId}:
     get:
       tags: [accounts]
       summary: Détail d'un compte
@@ -124,7 +129,7 @@ paths:
           # on ne révèle pas l'existence des comptes d'autrui (anti-IDOR / énumération).
 
   # ------------------------------------------------------------ payments
-  /payments:
+  /api/payments:
     post:
       tags: [payments]
       summary: Effectuer un paiement (synchrone, idempotent)
@@ -185,7 +190,7 @@ paths:
                 items: { $ref: '#/components/schemas/Payment' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
-  /payments/{paymentId}:
+  /api/payments/{paymentId}:
     get:
       tags: [payments]
       summary: Détail d'un paiement
@@ -204,7 +209,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
 
   # ---------------------------------------------------------- operations
-  /operations/consistency:
+  /api/operations/consistency:
     get:
       tags: [operations]
       summary: Vérifier la cohérence des données (rôle operator)
@@ -272,9 +277,9 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: |
-        JWT RS256 émis par `/auth/login`. En-tête : `kid` (empreinte RFC 7638 de la clé).
+        JWT RS256 émis par `/api/auth/login`. En-tête : `kid` (empreinte RFC 7638 de la clé).
         Claims : `iss` = `resilience-alpha-auth`, `aud` = `resilience-alpha`, `sub` (user id),
-        `role` (`client` | `operator`), `jti`, `iat`, `exp` (15 min). Vérifié via `/auth/.well-known/jwks.json`.
+        `role` (`client` | `operator`), `jti`, `iat`, `exp` (15 min). Vérifié via `/api/auth/.well-known/jwks.json`.
         Un `kid` inconnu déclenche un rechargement du JWKS : redémarrer l'auth (clé éphémère) révoque tous les jetons.
 
   parameters:

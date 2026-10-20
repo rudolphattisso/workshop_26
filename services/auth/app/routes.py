@@ -21,7 +21,8 @@ from app.security import CurrentUser, get_current_user
 
 log = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+# Préfixe /api/auth : le WAF transmet l'URI telle quelle (sans réécriture) à l'auth.
+router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 LOGINS = Counter("auth_logins_total", "Tentatives de connexion", ["outcome"])  # success | invalid_credentials
 

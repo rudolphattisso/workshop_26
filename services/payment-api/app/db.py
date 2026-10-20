@@ -1,9 +1,9 @@
 """Connexion PostgreSQL : moteur SQLAlchemy, sessions et sonde de disponibilité."""
 
-import os
 from collections.abc import Iterator
 from functools import lru_cache
 
+from resilience_common.config import database_url
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 @lru_cache
 def get_engine() -> Engine:
     return create_engine(
-        os.environ["DATABASE_URL"],
+        database_url(),
         # Teste la connexion avant de la réutiliser : après un redémarrage de PostgreSQL (remédiation),
         # les connexions mortes du pool sont remplacées au lieu de faire échouer les requêtes.
         pool_pre_ping=True,

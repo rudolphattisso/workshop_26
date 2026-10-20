@@ -6,7 +6,7 @@ from app.db import ping_database
 from app.keys import get_signing_key
 from app.routes import router
 
-app = create_app("auth", ready_checks={"database": ping_database}, version="0.1.0")
+app = create_app("auth", ready_checks={"database": ping_database}, public_prefix="/api/auth", version="0.1.0")
 app.include_router(router)
 
 # Clé chargée dès le démarrage (après create_app, qui configure les logs) : un fichier de clé invalide

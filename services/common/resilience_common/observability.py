@@ -22,8 +22,9 @@ from resilience_common.problems import problem
 TRACE_HEADER = "X-Trace-Id"
 # On n'accepte qu'un identifiant court et sans caractères spéciaux : pas d'injection dans les logs.
 _TRACE_ID_PATTERN = re.compile(r"^[A-Za-z0-9-]{8,64}$")
-# Requêtes de sondes et de scraping : comptées dans les métriques mais logguées en DEBUG pour ne pas noyer Loki.
-_QUIET_PATHS = {"/health", "/ready", "/metrics"}
+# Requêtes de sondes et de scraping (y compris /api/<service>/ready, sondé via le WAF toutes les 5 s) :
+# comptées dans les métriques mais logguées en DEBUG pour ne pas noyer Loki.
+_QUIET_SUFFIXES = ("/health", "/ready", "/metrics")
 
 HTTP_REQUESTS = Counter(
     "http_requests_total",
@@ -66,7 +67,7 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
             route = getattr(request.scope.get("route"), "path", "unmatched")
             HTTP_REQUESTS.labels(self.service, request.method, route, str(status)).inc()
             HTTP_LATENCY.labels(self.service, request.method, route).observe(duration)
-            level = logging.DEBUG if request.url.path in _QUIET_PATHS else logging.INFO
+            level = logging.DEBUG if request.url.path.endswith(_QUIET_SUFFIXES) else logging.INFO
             log.log(
                 level,
                 "http_request",
