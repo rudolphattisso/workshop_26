@@ -1,9 +1,7 @@
 """Comptes fictifs de démonstration. Idempotent : peut être relancé à chaque démarrage.
 
-Les identifiants des utilisateurs sont déterministes, pour que le service d'auth et payment-api
-s'accordent sans partager de base :
-
-    user_id = uuid5(NAMESPACE_URL, "resilience-alpha:user:<username>")
+Les identifiants des utilisateurs sont déterministes (`resilience_common.identity.user_id`), pour que
+le service d'auth et payment-api s'accordent sans partager de base.
 
 Usage : python -m app.seed
 """
@@ -11,6 +9,7 @@ Usage : python -m app.seed
 import logging
 import uuid
 
+from resilience_common.identity import user_id
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -18,10 +17,6 @@ from app.db import get_sessionmaker
 from app.models import Account, AccountKind, EntryKind, LedgerEntry
 
 log = logging.getLogger(__name__)
-
-
-def user_id(username: str) -> uuid.UUID:
-    return uuid.uuid5(uuid.NAMESPACE_URL, f"resilience-alpha:user:{username}")
 
 
 def account_id(username: str) -> uuid.UUID:

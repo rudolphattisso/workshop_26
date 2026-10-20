@@ -152,3 +152,63 @@
 - Le test de concurrence « même clé » a révélé un bug : la violation d'unicité survenait au `flush()`, hors du `try` qui protégeait le `commit()`, d'où une erreur 500 pour la requête perdante. Corrigé en protégeant toute la phase d'écriture
 
 **Prochain démarrage** : service d'auth (login, JWT RS256, JWKS), puis branchement de `get_current_user` sur la vérification JWT
+
+## 2026-10-20 (suite) — Service d'auth et branchement de payment-api
+
+**Fait**
+- `services/auth` : `POST /auth/login`, `GET /auth/me`, `GET /auth/.well-known/jwks.json` ; PostgreSQL (`users`), Alembic, seed, Dockerfile non-root
+- Socle commun : `resilience_common.jwt_auth` (vérification RS256, cache JWKS, dépendances FastAPI `bearer_user` / `require_role`) et `resilience_common.identity.user_id` (UUID partagés auth ↔ payment-api)
+- payment-api : `get_current_user` vérifie maintenant les vrais jetons (fin du 401 systématique) ; nouvelle variable `AUTH_JWKS_URL`
+- Contrats : `openapi-payment` 0.3.0 (claims `iss`/`aud`, `kid`), `service-conventions` 0.2 (`auth_logins_total`, événements de log de sécurité)
+- `compose.dev.yml` : base `auth` locale (127.0.0.1:5434) ; `.env.example` complété (valeurs factices)
+- ADR-DEV-0003
+- 96 tests au vert (36 socle, 21 auth, 39 payment-api)
+
+**Décisions techniques** (ADR-DEV-0003)
+- JWKS en cache : auth en panne ⇒ les jetons existants restent valides ; `kid` inconnu ⇒ rechargement (max 1 / 5 s)
+- Clé éphémère par défaut : redémarrer l'auth révoque tous les jetons (levier de remédiation) ; `JWT_PRIVATE_KEY_FILE` pour une clé stable
+- Pas de verrouillage de compte dans l'appli (un attaquant pourrait bloquer `smoke-client`) : limitation de débit au WAF, échecs visibles en métrique et en log
+- argon2id (paramètres OWASP), haché factice pour les identifiants inconnus (pas d'énumération de comptes)
+- Mots de passe de démo par variables d'environnement, 12 caractères minimum, rotation au redémarrage
+
+**Essais en conteneurs**
+- Login → paiement → rejeu → contrôle de cohérence (opérateur) : OK ; client sur `/operations/consistency` : 403
+- Auth arrêté : `GET /accounts` avec un jeton existant → 200, `/ready` de payment-api → 200
+- Auth redémarré : ancien jeton → 401, nouveau jeton → 200, sans redémarrer payment-api
+
+**Problèmes rencontrés**
+- Le log `signing_key_loaded` n'apparaissait pas : la clé était chargée avant que `create_app` configure les logs. Corrigé en chargeant la clé après
+
+**À demander**
+- **Infra** : conteneur `auth` (build `./services`, `auth/Dockerfile`) ; base `auth` + utilisateur `auth_service` ; variables `DATABASE_URL`, `DEMO_CLIENT_PASSWORD`, `SMOKE_CLIENT_PASSWORD`, `OPERATOR_PASSWORD` via Vault/SOPS ; `AUTH_JWKS_URL=http://auth:8000/auth/.well-known/jwks.json` pour payment-api ; scraping `/metrics` de l'auth
+- **Cyber** : limitation de débit sur `/auth/login` au WAF ; collecte des événements `login_failed` / `token_rejected` dans le SIEM ; décider si l'on monte une clé stable (`JWT_PRIVATE_KEY_FILE`) ou si l'on garde la clé éphémère
+- **IA** : `auth_logins_total{outcome}` est une bonne feature pour détecter la force brute
+
+**Prochain démarrage** : contrats `alert.schema.json` et `openapi-remediation.yaml`, puis smoke test (avec réessai sur 401)
+
+## 2026-10-20 (suite) — Contrats du moteur de remédiation
+
+**Fait**
+- `contracts/alert.schema.json` 0.1.0 : format d'alerte unique (IA, WAF, SIEM, watchdog), strict, 6 types d'incident
+- `contracts/openapi-remediation.yaml` 0.1.0 :
+  - `POST /alerts` (jeton de service) et `POST /alerts/alertmanager` (format natif) ;
+  - `GET /incidents`, `/incidents/{id}`, `/services`, `/playbooks` et le flux SSE `/events` (JWT opérateur) ;
+  - le cycle de vie, la table des playbooks et les métriques
+- ADR-DEV-0004
+- Validation : le schéma est conforme JSON Schema 2020-12 et ses exemples sont valides. 8 alertes invalides
+  sont bien rejetées (types et cibles inconnus, IP invalide, champ « action » imposé…). Les deux OpenAPI sont valides.
+
+**Décisions techniques** (ADR-DEV-0004)
+- L'émetteur décrit l'incident, le moteur choisit l'action selon une table publique (`GET /playbooks`)
+- Reprise = `/ready` + nouvelle transaction (smoke test) + cohérence des données
+- Déduplication (`alert_id`), cooldown de 120 s, 3 tentatives puis `ESCALATED`
+- Watchdog intégré (sondes toutes les 5 s, cohérence toutes les 30 s) : filet de sécurité si ML ou Prometheus manquent
+- Aucun endpoint d'action manuelle ; dashboard en lecture seule, flux SSE lu avec `fetch()` (jamais de jeton dans l'URL)
+
+**À demander**
+- **IA, Cyber, Infra** : relire `alert.schema.json` (types d'incident, cibles, `indicators`) et le valider dans leurs émetteurs
+- **Infra** : règles Prometheus avec les labels `incident_type`, `target` et `severity` ; receiver webhook Alertmanager vers `http://remediation:8000/alerts/alertmanager` avec le jeton en `credentials_file`
+- **Cyber** : une API ou un mécanisme pour **bloquer une IP au WAF** depuis le moteur (playbooks `TRAFFIC_FLOOD`, `BRUTE_FORCE`) ; `REMEDIATION_ALERT_TOKEN` dans Vault/SOPS
+- **Infra + Cyber** (toujours bloquant) : mode d'action sur les conteneurs ; procédure de restauration de la base `payment`
+
+**Prochain démarrage** : smoke test (`services/smoke-test`), puis moteur de remédiation v0 (watchdog + `SERVICE_DOWN`)

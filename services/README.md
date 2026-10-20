@@ -5,7 +5,8 @@ Microservices Python/FastAPI et interfaces React de RESILIENCE-ALPHA. Les choix 
 
 | Dossier | Contenu |
 |---|---|
-| `common/` | Socle partagé : logs JSON, trace_id, `/health` `/ready` `/metrics`, erreurs RFC 9457 |
+| `common/` | Socle partagé : logs JSON, trace_id, `/health` `/ready` `/metrics`, erreurs RFC 9457, vérification JWT |
+| `auth/` | Connexion, jetons RS256, JWKS (`contracts/openapi-payment.yaml`, tag auth ; ADR-DEV-0003) |
 | `payment-api/` | Comptes et paiements fictifs (`contracts/openapi-payment.yaml`) |
 
 ## Développer en local (Windows, Git Bash)
@@ -15,13 +16,15 @@ cd services
 python -m venv .venv
 .venv/Scripts/python -m pip install -r requirements-dev.txt
 
-# Base PostgreSQL locale (127.0.0.1:5433) — copier d'abord .env.example en .env et changer le mot de passe
+# Bases PostgreSQL locales (payment 127.0.0.1:5433, auth 127.0.0.1:5434)
+# — copier d'abord .env.example en .env et remplacer TOUTES les valeurs (mots de passe de démo : 12 caractères min.)
 docker compose -f compose.dev.yml --env-file .env up -d --wait
-set -a && . ./.env && set +a          # exporte DATABASE_URL
+set -a && . ./.env && set +a          # exporte DATABASE_URL, AUTH_DATABASE_URL, mots de passe…
 
-# Tests (ceux de payment-api VIDENT la base pointée par DATABASE_URL)
+# Tests (ils VIDENT les bases pointées par DATABASE_URL et AUTH_DATABASE_URL)
 .venv/Scripts/python -m pytest common/tests
 (cd payment-api && ../.venv/Scripts/python -m pytest)
+(cd auth && ../.venv/Scripts/python -m pytest)
 
 # Schéma et comptes de démo
 (cd payment-api && ../.venv/Scripts/alembic upgrade head && ../.venv/Scripts/python -m app.seed)
@@ -29,7 +32,21 @@ set -a && . ./.env && set +a          # exporte DATABASE_URL
 # Lancer un service avec la doc interactive sur http://127.0.0.1:8000/docs
 cd payment-api
 ENABLE_DOCS=true ../.venv/Scripts/python -m uvicorn app.main:app --reload
+
+# Lancer l'auth en parallèle sur le port 8001 (payment-api y lit les clés via AUTH_JWKS_URL)
+cd auth
+DATABASE_URL=$AUTH_DATABASE_URL ../.venv/Scripts/alembic upgrade head
+DATABASE_URL=$AUTH_DATABASE_URL ../.venv/Scripts/python -m app.seed
+DATABASE_URL=$AUTH_DATABASE_URL ENABLE_DOCS=true ../.venv/Scripts/python -m uvicorn app.main:app --port 8001
 ```
+
+## auth : jetons
+
+- `POST /auth/login` → jeton RS256 de 15 min. `payment-api` le vérifie avec la clé publique (`AUTH_JWKS_URL`),
+  gardée en cache : une panne de l'auth n'interrompt pas les paiements en cours.
+- Clé de signature : `JWT_PRIVATE_KEY_FILE` si défini, sinon clé éphémère. **Redémarrer l'auth révoque alors
+  tous les jetons** (levier de remédiation en cas de compromission).
+- Utilisateurs de démo : `alice`, `bob`, `cafe-demo` (clients), `smoke-client` (smoke test), `operator`.
 
 ## payment-api : données
 

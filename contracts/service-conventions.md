@@ -1,7 +1,7 @@
 # Conventions de service
 
 > Producteur : Dev · Consommateurs : Infra (scraping, Loki, healthchecks), IA (features), Cyber (SIEM).
-> Implémentées par le socle commun `services/common` (ADR-DEV-0001). Version 0.1 — 2026-10-20.
+> Implémentées par le socle commun `services/common` (ADR-DEV-0001). Version 0.2 — 2026-10-20.
 
 ## Services concernés
 
@@ -39,6 +39,15 @@ Métriques métier de `payment-api` :
 |---|---|---|---|
 | `payments_total` | counter | `status` (`CAPTURED`/`REJECTED`), `reason` (motif de refus, vide si capturé) | Débit métier, pic de refus (feature ML) |
 | `payment_idempotent_replays_total` | counter | — | Rejeux client : un pic signale des timeouts ou une perturbation |
+
+Métriques métier de `auth` :
+
+| Métrique | Type | Labels | Usage |
+|---|---|---|---|
+| `auth_logins_total` | counter | `outcome` (`success`/`invalid_credentials`) | Pic d'échecs = force brute / credential stuffing (feature ML, SIEM) |
+
+Événements de log de sécurité (`event`) utiles au SOC : `login_failed` (avec `username`, `client_ip`),
+`login_succeeded` (avec `user_id`, `role`), `token_rejected` (avec `reason`), `jwks_refreshed`.
 
 ## Logs
 
