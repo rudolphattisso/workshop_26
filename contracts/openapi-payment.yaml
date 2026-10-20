@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: RESILIENCE-ALPHA — API métier (auth + paiements)
-  version: 0.1.0
+  version: 0.2.0
   description: |
     Contrat de l'API métier de la plateforme de paiement **fictive**.
     Producteur : Dev (`services/auth`, `services/payment-api`).
@@ -210,9 +210,12 @@ paths:
       summary: Vérifier la cohérence des données (rôle operator)
       description: |
         Preuve de « données cohérentes » après remédiation, utilisée par le smoke test et le dashboard :
-        - la somme des soldes est égale au total de référence (les virements internes ne créent ni ne détruisent d'argent) ;
-        - chaque paiement `CAPTURED` a exactement un débit et un crédit de même montant ;
+        - la somme des soldes est égale au total d'ouverture (les paiements ne créent ni ne détruisent d'argent) ;
+        - le solde de chaque compte est égal à la somme de ses écritures au grand livre (détecte une modification
+          directe de la base) ;
+        - chaque paiement `CAPTURED` a exactement un débit et un crédit de même montant, un `REJECTED` aucune écriture ;
         - aucun solde négatif.
+        Le contrôle s'exécute sur un instantané cohérent (REPEATABLE READ).
       responses:
         '200':
           description: Résultat du contrôle (y compris quand il échoue — voir `consistent`)
@@ -395,7 +398,7 @@ components:
             type: object
             required: [rule, detail]
             properties:
-              rule: { type: string, enum: [TOTAL_MISMATCH, UNBALANCED_PAYMENT, NEGATIVE_BALANCE] }
+              rule: { type: string, enum: [TOTAL_MISMATCH, BALANCE_LEDGER_MISMATCH, UNBALANCED_PAYMENT, NEGATIVE_BALANCE] }
               detail: { type: string }
 
     Health:
