@@ -36,3 +36,32 @@
 - Langage des services (FastAPI proposé, ADR-DEV-0001 à rédiger)
 
 **Prochain démarrage** : trancher le traitement du paiement (une requête ou deux temps), puis rédiger le contrat `contracts/openapi-payment.yaml`.
+
+## 2026-10-20 — Branches Git et contrat de l'API métier
+
+**Fait**
+- Création de la branche d'intégration `develop` (flux : `dev/<sujet>` → `develop` → `main`)
+- Renommage de `app_dev` en `dev/app` (convention `<domaine>/<sujet>`) ; PR #1 `dev/app` → `develop` mergée
+- Rédaction du contrat `contracts/openapi-payment.yaml` (auth + comptes + paiements + contrôle de cohérence)
+
+**Fichiers créés / modifiés**
+- `contracts/openapi-payment.yaml`, `docs/adr/ADR-DEV-0002-paiement-synchrone-idempotent.md`, `docs/adr/README.md`
+
+**Décisions actées**
+- Paiement **synchrone** en une transaction SQL, avec `Idempotency-Key` obligatoire (ADR-DEV-0002)
+- Montants en centimes entiers, devise EUR unique
+- JWT RS256 de 15 min, vérifié par JWKS (aucun secret partagé entre services) ; rôles `client` / `operator`
+- 404 au lieu de 403 sur le compte d'un autre client (pas d'énumération) ; erreurs au format RFC 9457
+- `GET /operations/consistency` sert de preuve de « données cohérentes » après remédiation
+
+**Problèmes rencontrés**
+- Push impossible : le DNS du partage de connexion iPhone (VPN actif) ne répondait pas. Contourné pour la
+  commande avec `git -c http.curloptResolve=github.com:443:<ip>`
+- `gh` n'est pas installé : PR créée depuis le navigateur
+
+**Questions ouvertes**
+- Mise à jour du workflow Git de `CLAUDE.md` pour y ajouter `develop` (fichier commun, PR dédiée)
+- Révocation de jetons par le moteur de remédiation : à définir dans `openapi-remediation.yaml`
+- Ports et exposition de `/health`, `/ready`, `/metrics` : à fixer par Infra + Cyber dans `contracts/network.md`
+
+**Prochain démarrage** : `contracts/alert.schema.json` et `contracts/service-conventions.md`, puis le squelette FastAPI commun et l'ADR-DEV-0001
