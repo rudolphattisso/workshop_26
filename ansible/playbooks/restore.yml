@@ -9,6 +9,8 @@
   tasks:
     - ansible.builtin.import_tasks: ../tasks/attach_controller.yml
     - ansible.builtin.import_tasks: ../tasks/maintenance_on.yml
+    - ansible.builtin.include_tasks: ../tasks/restore_vault.yml
+      when: restore_vault | default(false) | bool
     - ansible.builtin.import_tasks: ../tasks/restore_db.yml
     - ansible.builtin.import_tasks: ../tasks/verify.yml
     - ansible.builtin.import_tasks: ../tasks/maintenance_off.yml

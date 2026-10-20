@@ -14,22 +14,25 @@ groups:
         annotations:
           summary: "Le WAF BunkerWeb (point d'entrée unique) ne répond plus"
 
+      # Les 3 sondes passent par le WAF : si le WAF tombe, elles échouent TOUTES. Une panne de
+      # service précis n'est donc retenue que si au moins une autre sonde passe encore (WAF vivant),
+      # sinon on redémarrerait un service sain au lieu du WAF (cause racine -> WafDown).
       - alert: PaymentApiUnavailable
-        expr: probe_success{service="payment-api"} == 0
+        expr: probe_success{service="payment-api"} == 0 and on() (max(probe_success{service=~"auth|frontend"}) == 1)
         for: 10s
         labels: { severity: critical, remediation: restart, target: payment-api }
         annotations:
           summary: "L'API de paiement ne répond plus via le WAF ({{ $labels.instance }})"
 
       - alert: AuthUnavailable
-        expr: probe_success{service="auth"} == 0
+        expr: probe_success{service="auth"} == 0 and on() (max(probe_success{service=~"payment-api|frontend"}) == 1)
         for: 10s
         labels: { severity: critical, remediation: restart, target: auth }
         annotations:
           summary: "Le service d'authentification ne répond plus via le WAF"
 
       - alert: FrontendUnavailable
-        expr: probe_success{service="frontend"} == 0
+        expr: probe_success{service="frontend"} == 0 and on() (max(probe_success{service=~"auth|payment-api"}) == 1)
         for: 10s
         labels: { severity: major, remediation: restart, target: frontend }
         annotations:

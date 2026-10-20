@@ -75,8 +75,10 @@ Toutes les opérations passent par **un seul point d'entrée** : `scripts/ops.ps
 | `reload` | rechargement des configs d'observabilité | `.\scripts\ops.ps1 reload` |
 | `teardown` | arrêt (`-e purge=true` supprime aussi les données) | `.\scripts\ops.ps1 teardown` |
 
-Relance après redémarrage du PC : démarrer Docker Desktop — les conteneurs ont
-`restart: unless-stopped` et repartent seuls — puis `.\scripts\ops.ps1 verify`.
+Relance après redémarrage du PC : démarrer Docker Desktop puis lancer `.\scripts\ops.ps1 deploy`
+(idempotent, ~1 min). Ne pas compter sur `restart: unless-stopped` : quand Docker Desktop est quitté
+proprement, les conteneurs sont arrêtés et ne repartent PAS tout seuls (constaté). La politique ne
+joue que pour un plantage d'un conteneur.
 
 ## 5. Démos
 

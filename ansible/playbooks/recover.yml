@@ -12,6 +12,8 @@
   vars:
     maintenance_reason: "Reconstruction PRA (recover.yml)"
     wipe: "{{ wipe_data | default(false) | bool }}"
+    # le scheduler du WAF doit être recréé AVEC son instance (sinon il perd la conf poussée)
+    recover_services: "{{ business_services + ['bunkerweb-scheduler', 'bunkerweb-ui', 'bw-redis'] }}"
   tasks:
     - ansible.builtin.import_tasks: ../tasks/preflight.yml
     - ansible.builtin.import_tasks: ../tasks/attach_controller.yml
@@ -21,11 +23,15 @@
       ansible.builtin.include_tasks: ../tasks/backup_db.yml
       when: pre_backup | default(not wipe) | bool
 
+    - name: "PRA | Sauvegarde préventive de Vault"
+      ansible.builtin.include_tasks: ../tasks/backup_vault.yml
+      when: pre_backup | default(not wipe) | bool
+
     - name: "PRA | Horodatage du début"
       ansible.builtin.set_fact: { pra_start: "{{ now().timestamp() }}" }
 
     - name: "PRA | Arrêt et suppression des conteneurs métier"
-      ansible.builtin.command: "{{ compose }} rm --force --stop {{ business_services | join(' ') }} txprobe"
+      ansible.builtin.command: "{{ compose }} rm --force --stop {{ recover_services | join(' ') }} txprobe"
       changed_when: true
 
     - name: "PRA | Destruction du volume de données (compromission supposée)"
@@ -38,7 +44,7 @@
       changed_when: true
 
     - name: "PRA | Recréation des conteneurs"
-      ansible.builtin.command: "{{ compose }} up -d --force-recreate --wait --wait-timeout 180 {{ business_services | join(' ') }} txprobe"
+      ansible.builtin.command: "{{ compose }} up -d --force-recreate --wait --wait-timeout 420 {{ recover_services | join(' ') }} txprobe"
       changed_when: true
 
     - name: "PRA | Restauration des données depuis la dernière sauvegarde saine"

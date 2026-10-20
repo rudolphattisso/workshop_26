@@ -5,3 +5,4 @@
   gather_facts: false
   tasks:
     - ansible.builtin.import_tasks: ../tasks/backup_db.yml
+    - ansible.builtin.import_tasks: ../tasks/backup_vault.yml
