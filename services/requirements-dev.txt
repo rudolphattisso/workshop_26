@@ -1,0 +1,5 @@
+# Outils de développement et de test (non embarqués dans les images)
+-e ./common
+-r payment-api/requirements.txt
+pytest==8.3.4
+httpx==0.28.1
