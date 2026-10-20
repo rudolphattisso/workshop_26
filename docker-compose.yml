@@ -119,6 +119,24 @@ services:
     labels: { resilience.tier: edge }
     deploy: { resources: { limits: { memory: 384m, cpus: "1.0" } } }
 
+  # Redis : stocke les rapports de blocage (« Reports ») et les bans partagés entre le WAF et la
+  # console. Sans lui, la console BunkerWeb n'affiche aucune alerte. Réseau interne uniquement.
+  bw-redis:
+    <<: *hardening
+    image: redis:7-alpine
+    user: "999:999"                 # redis : évite le chown de l'entrypoint (interdit avec cap_drop ALL)
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "48mb", "--maxmemory-policy", "allkeys-lru"]
+    read_only: true
+    tmpfs: ["/data:size=8m"]
+    networks: [bw-universe]
+    labels: { resilience.tier: edge }
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy: { resources: { limits: { memory: 64m, cpus: "0.25" } } }
+
   bunkerweb-scheduler:
     image: ${WAF_SCHEDULER_IMAGE:-bunkerity/bunkerweb-scheduler:1.6.16}
     restart: unless-stopped
@@ -130,6 +148,8 @@ services:
       # Accès : liste des noms d'hôte acceptés (ajouter l'IP du hotspot pour la démo via .env)
       SERVER_NAME: ${PUBLIC_SERVER_NAME:-localhost 127.0.0.1 bunkerweb}
       MULTISITE: "no"
+      USE_REDIS: "yes"
+      REDIS_HOST: "bw-redis"
       USE_REAL_IP: "no"
       MAX_CLIENT_SIZE: "256k"
       LOG_LEVEL: "notice"
@@ -187,6 +207,8 @@ services:
     logging: *logging
     environment:
       DATABASE_URI: "sqlite:////db/db.sqlite3"
+      USE_REDIS: "yes"
+      REDIS_HOST: "bw-redis"
       API_TOKEN: ${BW_API_TOKEN:?défini par ops deploy dans .env}
       ADMIN_USERNAME: admin
       ADMIN_PASSWORD: ${BW_UI_PASSWORD:?défini par ops deploy dans .env}
@@ -197,7 +219,7 @@ services:
       - bw-ui-data:/data
     ports: ["${ADMIN_BIND_ADDR:-127.0.0.1}:${BW_UI_PORT:-17000}:7000"]
     networks: [bw-universe, mgmt]
-    depends_on: [bunkerweb-scheduler]
+    depends_on: [bunkerweb-scheduler, bw-redis]
     labels: { resilience.tier: edge }
     deploy: { resources: { limits: { memory: 256m, cpus: "0.5" } } }
 
