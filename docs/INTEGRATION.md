@@ -25,14 +25,17 @@ composants **en respectant les contrats ci-dessous** — rien d'autre n'est à m
 | Utilisateur | non-root ; le système de fichiers est en lecture seule (écrire dans `/tmp` seulement) |
 
 ### Routes publiées par le WAF
-| Public | Interne |
+BunkerWeb transmet l'URI **telle quelle** au back-end (aucune réécriture) : les services doivent donc
+exposer leurs routes publiques **sous leur préfixe `/api/...`**.
+
+| Public (via le WAF) | Back-end |
 |---|---|
-| `POST /api/auth/login` | `auth:8000/auth/login` |
-| `GET  /api/auth/ready` | `auth:8000/ready` |
-| `/api/payments*` | `payment-api:8000/payments*` |
-| `GET  /api/payments/ready` | `payment-api:8000/ready` |
-| `/` | `frontend:8080/` |
-Toute autre route sous `/api/` renvoie 404. Pour en ajouter : `infra/waf/default.conf.template`.
+| `/api/auth/*` (ex. `POST /api/auth/login`, `GET /api/auth/ready`) | `auth:8000` |
+| `/api/payments*` (ex. `POST /api/payments`, `GET /api/payments/ready`) | `payment-api:8000` |
+| `/` (tout le reste) | `frontend:8080` |
+
+Pour ajouter une route : ajouter `REVERSE_PROXY_URL_<n>` / `REVERSE_PROXY_HOST_<n>` au service
+`bunkerweb-scheduler` dans `docker-compose.yml`, puis `.\scripts\ops.ps1 deploy`.
 
 ### Moteur de remédiation
 - **Entrée** : `POST /webhook/alertmanager` (format webhook Alertmanager v4), en-tête
@@ -59,13 +62,15 @@ requêtes utiles : `synthetic_transaction_success`, `probe_success`, `ALERTS{ale
 ### Données disponibles pour l'entraînement
 - **Métriques** (API Prometheus, pas de 5 s, rétention 7 j) :
   `http://127.0.0.1:9090/api/v1/query_range?query=<promql>&start=<ts>&end=<ts>&step=5s`.
-  Features suggérées : `sum(rate(nginx_http_requests_total[1m]))`,
+  Features suggérées : débit WAF et blocages (Loki, voir ci-dessous),
   `sum by (status) (rate(http_requests_total{service="payment-api"}[1m]))`,
   latence p95, `rate(container_cpu_usage_seconds_total{service="payment-api"}[1m])`,
-  `container_memory_working_set_bytes`, compte de 403/429 du WAF (Loki).
+  `container_memory_working_set_bytes`, compte de 403/429 du WAF (Loki : `{service="bunkerweb"}`).
 - **Logs** (API Loki via Grafana) :
-  `http://127.0.0.1:3000/api/datasources/proxy/uid/loki/loki/api/v1/query_range?query={service="waf"}`
+  `http://127.0.0.1:3000/api/datasources/proxy/uid/loki/loki/api/v1/query_range?query={service="bunkerweb"}`
   (authentification Grafana `admin`).
+- **Export prêt** : les alertes Wazuh (JSONL + CSV) se regénèrent depuis `/var/ossec/logs/alerts` du conteneur
+  `wazuh.manager` ; elles ne contiennent que des détections, pas le trafic normal (voir Loki/Prometheus pour le normal).
 - Pour générer des périodes « normales » : la sonde synthétique produit un trafic de fond
   permanent ; ajouter de la charge légitime avec un script de trafic.
 

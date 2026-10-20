@@ -121,11 +121,11 @@ p1.box(262, 60, 36, 1480, "Point d'accès mobile Windows « RESILIENCE-G&lt;n&gt
 
 # PC Hôte
 p1.box(320, 40, 1480, 1520, "<b>PC Hôte — 192.168.137.1</b> · Windows 11 · Docker Desktop (WSL2) · projet Compose "
-       "« resilience » — 24 conteneurs", "#fafafa", "#333333",
+       "« resilience » — 25 conteneurs", "#fafafa", "#333333",
        "verticalAlign=top;align=left;spacingLeft=10;fontSize=13;strokeWidth=2;arcSize=1;")
 
 # Zones réseau
-p1.zone(340, 80, 230, 300, "edge · 172.30.10.0/24 (publié LAN)", "edge")
+p1.zone(340, 80, 230, 425, "edge · 172.30.10.0/24 (publié LAN)", "edge")
 p1.zone(600, 80, 770, 240, "app · 172.30.20.0/24 · interne", "app")
 p1.zone(600, 350, 770, 150, "data · 172.30.30.0/24 · interne", "data")
 p1.zone(340, 530, 1030, 300, "monitoring · 172.30.40.0/24 · interne", "mon")
@@ -139,6 +139,8 @@ p1.zone(1400, 530, 360, 300, "Exploitation (Ansible)", "mgmt")
 waf = p1.svc(360, 140, 190, 150, "BunkerWeb (WAF)", "nginx + ModSecurity<br>OWASP CRS v4<br>rate-limit + auto-ban<br>"
              ":8080 ← 0.0.0.0:80<br>edge, app, monitoring", "bw")
 bws = p1.svc(360, 300, 190, 70, "bunkerweb-scheduler", "plan de contrôle du WAF<br>pousse la conf (bw-universe)", "bw")
+bui = p1.svc(360, 385, 190, 52, "bunkerweb-ui", "console WAF · 127.0.0.1:17000", "bw")
+brd = p1.svc(360, 445, 190, 52, "bw-redis", "rapports + bans (bw-universe)", "bw")
 fe = p1.svc(620, 140, 170, 150, "frontend", "nginx non-root<br>:8080<br>FS lecture seule<br>réseau : app", "app")
 auth = p1.svc(810, 140, 170, 150, "auth", "FastAPI · JWT<br>:8000<br>rôle BDD auth_svc<br>app, data, monitoring", "app")
 pay = p1.svc(1000, 140, 170, 150, "payment-api", "FastAPI · paiements<br>:8000<br>rôle BDD payment_svc<br>app, data, monitoring", "app")
@@ -277,6 +279,7 @@ flows = [
     ("F32", "vault-unsealer", "Vault", "vault", "TCP 8200 HTTP", "Initialisation, descellement automatique, configuration", "Réseau interne vault ; clés stockées dans un volume dédié (compromis de lab documenté)", A),
     ("F33", "Opérateur (PC Hôte)", "bunkerweb-ui (console WAF)", "mgmt (loopback)", "127.0.0.1:17000 HTTP", "Visualiser le WAF, les IP bannies, les instances", "Liée à 127.0.0.1 ; authentification admin (mot de passe généré)", A),
     ("F34", "bunkerweb-ui", "bunkerweb (API) + base SQLite partagée", "bw-universe", "TCP 5000 HTTP (API) + volume bw-data", "Lecture de l'état du WAF et gestion des bans", "Réseau interne bw-universe ; jeton d'API ; la config « as code » reste dans le compose", A),
+    ("F35", "bunkerweb, bunkerweb-ui, bunkerweb-scheduler", "bw-redis", "bw-universe", "TCP 6379 Redis", "Rapports de blocage et bans partagés (affichés dans la console)", "Réseau interne bw-universe ; non persistant, mémoire plafonnée à 48 Mo", A),
     ("A1", "PC Attaquant", "BunkerWeb (WAF)", "LAN → edge", "TCP 80 HTTP", "Attaques XSS / SQLi / DDoS (démo)", "Bloquées (403) ou limitées/bannies (429→403) ; Wazuh lève les alertes 1001xx", Atk),
 ]
 end = p2.table(20, 60, cols, [list(f[:7]) for f in flows], row_h=46, fills=[f[7] + "33" for f in flows])
@@ -300,7 +303,7 @@ p3 = Page("3 - Inventaire serveurs", 1760, 1480)
 p3.text(20, 10, 1600, 30, "<font style='font-size:20px'><b>Inventaire</b> — machines physiques et conteneurs</font>")
 mcols = [("Machine", 150), ("Adresse", 170), ("Système", 260), ("Ressources", 250), ("Rôle", 330), ("Exposition", 330)]
 machines = [
-    ["PC Hôte", "192.168.137.1 (hotspot)", "Windows 11 · Docker Desktop 29 (WSL2)", "4+ cœurs · 16 Go (6–8 Go pour Docker) · 50 Go SSD", "Exécute les 24 conteneurs + runner Ansible", "80/tcp sur le hotspot ; admin sur 127.0.0.1"],
+    ["PC Hôte", "192.168.137.1 (hotspot)", "Windows 11 · Docker Desktop 29 (WSL2)", "4+ cœurs · 16 Go (6–8 Go pour Docker) · 50 Go SSD", "Exécute les 25 conteneurs + runner Ansible", "80/tcp sur le hotspot ; admin sur 127.0.0.1"],
     ["PC Attaquant", "192.168.137.x (DHCP)", "Kali Linux / outils Red Team", "8–16 Go RAM", "Scénarios offensifs depuis un poste distinct", "Aucune ; cible autorisée = 192.168.137.1:80"],
     ["PC IA (déporté)", "192.168.137.y (DHCP)", "Windows / Linux · Ollama", "16 Go RAM, GPU conseillé", "LLM ≤ 8B + RAG LangChain — déporté pour libérer la RAM du PC Hôte", "11434/tcp vers le PC Hôte uniquement"],
 ]
@@ -312,6 +315,7 @@ containers = [
     ["bunkerweb", "bunkerity/bunkerweb:1.6.16", "WAF / reverse proxy (données)", "8080", "0.0.0.0:80", "edge, app, monitoring, bw-universe", "nginx (101)", "384 Mo", "cap_drop ALL, no-new-privileges"],
     ["bunkerweb-scheduler", "bunkerity/bunkerweb-scheduler:1.6.16", "WAF — plan de contrôle", "—", "—", "bw-universe", "root", "384 Mo", "API interne + jeton"],
     ["bunkerweb-ui", "bunkerity/bunkerweb-ui:1.6.16", "Console web du WAF", "7000", "127.0.0.1:17000", "bw-universe, mgmt", "ui", "256 Mo", "loopback uniquement ; mot de passe généré"],
+    ["bw-redis", "redis:7-alpine", "Rapports/bans du WAF", "6379", "—", "bw-universe", "redis (999)", "64 Mo", "FS lecture seule, cap_drop ALL, réseau interne"],
     ["frontend", "resilience/frontend (nginx-unprivileged)", "Frontal web", "8080", "—", "app", "nginx (101)", "64 Mo", "FS lecture seule"],
     ["auth", "resilience/auth (python 3.12)", "Authentification JWT", "8000", "—", "app, data, monitoring", "10001", "192 Mo", "FS lecture seule, secrets fichiers"],
     ["payment-api", "resilience/payment-api (python 3.12)", "API de paiement", "8000", "—", "app, data, monitoring", "10001", "192 Mo", "FS lecture seule, secrets fichiers"],
@@ -335,7 +339,7 @@ containers = [
     ["docker-proxy-ro", "tecnativa/docker-socket-proxy:v0.4.2", "API Docker lecture seule", "2375", "—", "dockerapi-ro", "haproxy", "64 Mo", "POST interdit"],
 ]
 end = p3.table(20, end + 40, ccols, containers, row_h=32)
-p3.text(20, end + 15, 1600, 40, "Mesuré : ~1,7 Go de RAM pour les 21 conteneurs (Wazuh manager + agent inclus) sur 7,6 Go alloués. Volumes : pgdata, "
+p3.text(20, end + 15, 1600, 40, "Mesuré : ~2,25 Go de RAM pour les 25 conteneurs (WAF + console + Redis, Wazuh manager + agent, Vault) sur 7,6 Go alloués. Volumes : pgdata, "
         "prometheus/loki/grafana/alertmanager/alloy-data, bw-data, wazuh-* , agent-logs. Secrets : ./secrets + .env (non versionnés).")
 
 doc = ('<mxfile host="app.diagrams.net" type="device">'

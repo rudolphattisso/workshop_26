@@ -103,11 +103,11 @@ docker-compose.yml        Définition de toute la plateforme (réseaux, secrets,
 .env.example              Paramètres non secrets (ports, WAF, remédiation)
 scripts/ops.ps1|ops.sh    Point d'entrée des opérations (lance Ansible en conteneur)
 ansible/                  Runner, inventaire, playbooks (deploy, verify, backup, restore, recover, chaos…)
-infra/                    Configs : waf (BunkerWeb), postgres, prometheus, alertmanager, loki, alloy, grafana, blackbox, docker-proxy, wazuh
+infra/                    Configs : postgres, prometheus, alertmanager, loki, alloy, grafana, blackbox, docker-proxy, wazuh, vault (le WAF BunkerWeb se règle dans docker-compose.yml)
 services/                 Services de référence : auth, payment-api, txprobe, remediation, frontend, logshipper
 attack/                   Banc d'attaque de démo (DDoS, XSS) — à lancer depuis le PC Attaquant
 docs/                     Architecture infra, runbook d'exploitation, contrats d'intégration
-secrets/ backups/ reports/  Données locales (non versionnées)
+secrets/ backups/ reports/ exports/  Données locales (non versionnées)
 ```
 
 ## 7. Documentation

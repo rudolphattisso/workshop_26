@@ -12,3 +12,6 @@ __pycache__/
 *.pyc
 .venv/
 
+
+# Exports de données (logs Wazuh pour le ML) : volumineux, non versionnés
+exports/

@@ -101,7 +101,7 @@ Un redémarrage **ne suffit pas** : il faut repartir d'un état sain connu.
 - Perte de données maximale (RPO) = temps écoulé depuis la dernière sauvegarde.
 
 ## PROC-09 — Tester la résilience (recette, chaos engineering)
-`.\scripts\ops.ps1 chaos -e target=<waf|frontend|auth|payment-api|postgres> -e fault=<stop|kill>`
+`.\scripts\ops.ps1 chaos -e target=<bunkerweb|frontend|auth|payment-api|postgres|vault> -e fault=<stop|kill>`
 Le playbook vérifie l'état initial, injecte la panne, mesure le délai de **détection** et de
 **reprise vérifiée**, refait une transaction E2E et écrit un rapport JSON dans `reports\`.
 

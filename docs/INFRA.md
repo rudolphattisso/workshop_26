@@ -8,20 +8,23 @@
    Jury / navigateur ──────────┤  :80  (seul port publié sur le LAN)
                                ▼
 ┌──────────────────────────── PC Hôte — Docker Desktop (WSL2) ────────────────────────────┐
-│  [edge]        WAF  nginx + ModSecurity + OWASP CRS  (rate-limit, logs JSON)            │
+│  [edge]    BunkerWeb (nginx + ModSecurity + OWASP CRS, rate-limit, auto-ban)            │
+│            + scheduler (conf) + console web + Redis (rapports/bans)  [bw-universe]       │
 │                 │                                                                       │
 │  [app]   frontend   auth   payment-api   txprobe (transaction synthétique)              │
 │                       │        │                                                        │
 │  [data]               └─ PostgreSQL ─┘   (rôles à moindre privilège, aucun port publié) │
 │                                                                                         │
-│  [monitoring]  Prometheus ◄─ exporters (blackbox, waf, postgres, cAdvisor) + /metrics   │
+│  [monitoring]  Prometheus ◄─ blackbox, postgres-exporter, cAdvisor + /metrics           │
 │                Loki ◄─ Alloy ◄─ proxy Docker lecture seule  [dockerapi-ro]              │
 │                Grafana  (Prometheus + Loki + Alertmanager)                              │
 │                Prometheus/Loki rules ─► Alertmanager ─► Moteur de remédiation           │
 │                                                              │                          │
 │  [control]                         proxy Docker (restart/start/stop uniquement)        │
-│  [mgmt]  Grafana :3000, Prometheus :9090, Alertmanager :9093, remédiation :18090        │
-│          publiés sur 127.0.0.1 seulement                                                │
+│  [siem]  logshipper ─► wazuh-agent ─► wazuh.manager ─► (syslog) Alloy ─► Loki ─► Grafana│
+│  [vault] HashiCorp Vault (secrets) + vault-unsealer (descellement automatique)          │
+│  [mgmt]  Grafana :3000, Prometheus :9090, Alertmanager :9093, remédiation :18090,       │
+│          console BunkerWeb :17000, Vault :18200 — publiés sur 127.0.0.1 seulement       │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -30,11 +33,12 @@
 | Outil | Question à laquelle il répond | Ce qu'il fait ici | Ce qu'il ne fait PAS |
 |---|---|---|---|
 | **Docker** | *Comment isoler et livrer chaque composant ?* | Images immuables, une par service ; limites mémoire/CPU ; utilisateurs non-root | — |
-| **Docker Compose** | *Quel est l'état désiré de la plateforme ?* | Décrit de façon déclarative les 21 conteneurs, 9 réseaux, volumes, secrets, healthchecks, politiques de redémarrage | N'opère rien dans le temps (pas de sauvegarde, pas de vérification métier, pas de PRA) |
+| **Docker Compose** | *Quel est l'état désiré de la plateforme ?* | Décrit de façon déclarative les 25 conteneurs, 10 réseaux, volumes, secrets, healthchecks, politiques de redémarrage | N'opère rien dans le temps (pas de sauvegarde, pas de vérification métier, pas de PRA) |
 | **Ansible** | *Comment opère-t-on la plateforme de façon reproductible ?* | Procédures codées et idempotentes : préflight, génération des secrets, validation des configs, déploiement, vérification fonctionnelle, sauvegarde, restauration, **PRA**, recette chaos | N'est pas dans la boucle de remédiation temps réel (trop lent, trop privilégié) |
 | **BunkerWeb** (WAF) | *Comment filtrer le trafic entrant ?* | Point d'entrée unique : nginx + ModSecurity + OWASP CRS v4 (bloque XSS/SQLi), limitation de débit et **bannissement automatique** des IP « bad behavior » (anti-DoS), reverse proxy vers les microservices | Export Prometheus = option PRO → supervision via blackbox + Loki |
 | **HashiCorp Vault** | *Où vivent les secrets ?* | **Source de vérité** des 9 secrets de la plateforme (KV v2 `resilience/`), audit activé, politiques moindre privilège ; Ansible y range les secrets et reconstruit `./secrets/` depuis Vault (PRA) ; descellement automatique après un redémarrage | Les conteneurs lisent toujours des Docker secrets (copie d'exécution) : Vault ne sert pas de runtime en ligne aux services |
 | **Console BunkerWeb** (GUI) | *Que fait le WAF en ce moment ?* | Tableau de bord du WAF : instances, requêtes, IP bannies, règles ; publiée sur `127.0.0.1:17000` (mot de passe généré dans `.env`) | Les réglages du compose restent la source de vérité « as code » : la console sert à observer et gérer les bannissements |
+| **Redis** (`bw-redis`) | *Où la console lit-elle les blocages ?* | Stocke les rapports de blocage et les bans partagés entre le WAF et la console BunkerWeb ; sans lui, la console n'affiche aucune alerte | Aucune donnée métier ; mémoire plafonnée à 48 Mo, non persistant |
 | **Prometheus** | *Dans quel état sont les services ?* | Scrape toutes les 5 s : métriques applicatives, sondes boîte noire via le WAF, conteneurs, base ; évalue les règles d'alerte | — |
 | **Loki + Alloy** | *Que s'est-il passé ?* | Centralise les journaux stdout de **tous** les conteneurs (découverte automatique), règles LogQL de sécurité (fonction SOC légère) | Pas d'Elastic : Loki n'indexe que les labels → ~10× moins de RAM |
 | **Wazuh** (SIEM/HIDS) | *Quelles menaces de sécurité ?* | Moteur de détection : un agent surveille toute la plateforme (FIM, rootcheck, SCA, analyse des journaux) ; le manager applique des règles XSS/SQLi/DDoS/force brute et **envoie ses alertes en syslog JSON vers Loki** → visualisées et alertées dans **Grafana** | Pas de dashboard ni d'indexer Wazuh (OpenSearch = Elastic, écarté par le sujet) : un seul outil de visualisation |
@@ -103,8 +107,8 @@ l'agent analyse. Les conteneurs applicatifs restent intacts (non-root, FS en lec
 | `monitoring` | oui | observabilité + endpoints `/metrics` | collecte |
 | `control` | oui | remediation, docker-proxy | plan de contrôle isolé |
 | `dockerapi-ro` | oui | alloy, logshipper, docker-proxy-ro | lecture des logs/API Docker |
-| `mgmt` | non | grafana, prometheus, alertmanager, remediation | publication sur 127.0.0.1 |
-| `bw-universe` | oui | bunkerweb, bunkerweb-scheduler, bunkerweb-ui | plan de contrôle du WAF (API interne) |
+| `mgmt` | non | grafana, prometheus, alertmanager, remediation, bunkerweb-ui, vault | publication sur 127.0.0.1 |
+| `bw-universe` | oui | bunkerweb, bunkerweb-scheduler, bunkerweb-ui, bw-redis | plan de contrôle du WAF (API interne) |
 | `vault` | oui | vault, vault-unsealer | Vault et son sidecar de descellement (+ vault sur `mgmt` pour l'UI loopback) |
 | `siem` | oui | wazuh.manager, wazuh-agent, alloy | SIEM Wazuh (agent → manager ; alertes du manager → Alloy → Loki) |
 
@@ -155,7 +159,7 @@ Rétention : 7 jours (métriques et logs) — couvre la semaine du workshop.
 
 | Essai | Résultat |
 |---|---|
-| RAM de toute la stack (21 conteneurs, Wazuh manager + agent inclus) | **~1,7 Go** (mesuré ; 2,3 Go avec l'indexer + dashboard Wazuh, retirés) |
+| RAM de toute la stack (25 conteneurs : WAF + console + Redis, Wazuh manager + agent, Vault) | **~2,25 Go** mesurés sur 7,6 Go alloués à Docker (l'indexer + dashboard Wazuh, retirés, coûtaient ~0,6 Go de plus) |
 | `chaos` : arrêt de `payment-api` / `kill auth` | détection ~21–24 s, reprise vérifiée par transaction ~32–33 s |
 | `recover -e wipe_data=true` : volume détruit, reconstruction + restauration | **48 s**, aucune perte de transaction |
 | Proxy Docker de la remédiation | `restart` → 204 ; `create`, `exec`, `kill`, `images`, `volumes` → **403** |
