@@ -129,3 +129,26 @@
 - Sauvegardes et restauration de la base `payment` (le schéma se rejoue via Alembic au démarrage)
 
 **Prochain démarrage** : logique de paiement (`POST /payments` transactionnel et idempotent, lectures, `/operations/consistency`)
+
+## 2026-10-20 (suite) — Logique de paiement de payment-api
+
+**Fait**
+- `POST /payments` : transaction unique, verrouillage des comptes, idempotence, refus enregistrés
+- Lectures `GET /accounts`, `/accounts/{id}`, `/payments`, `/payments/{id}` avec règles de visibilité client / opérateur
+- `GET /operations/consistency` (opérateur) : 4 invariants comptables sur un instantané REPEATABLE READ
+- Métriques métier `payments_total{status,reason}` et `payment_idempotent_replays_total`
+- Découpage : `security.py` (identité), `schemas.py` (entrées/sorties), `payments.py` (métier), `routes.py` (HTTP)
+- Contrat `openapi-payment` passé en 0.2.0 (règle `BALANCE_LEDGER_MISMATCH`) ; métriques documentées dans `service-conventions.md`
+- 52 tests au vert (38 payment-api, 14 socle), dont 2 tests de concurrence
+
+**Décisions techniques**
+- `SELECT … FOR UPDATE` sur les deux comptes, triés par id : pas de double dépense, pas d'interblocage entre paiements croisés
+- Idempotence garantie par la contrainte unique en base : la requête perdante d'une course renvoie le paiement de la gagnante
+- Empreinte SHA-256 du corps canonique : même clé + corps différent ⇒ 409
+- 404 (et non 403) sur une ressource d'un autre client ; 403 si on tente de débiter le compte d'autrui
+- `get_current_user` refuse tout (401) en attendant le service d'auth ; les tests le substituent
+
+**Problèmes rencontrés**
+- Le test de concurrence « même clé » a révélé un bug : la violation d'unicité survenait au `flush()`, hors du `try` qui protégeait le `commit()`, d'où une erreur 500 pour la requête perdante. Corrigé en protégeant toute la phase d'écriture
+
+**Prochain démarrage** : service d'auth (login, JWT RS256, JWKS), puis branchement de `get_current_user` sur la vérification JWT
