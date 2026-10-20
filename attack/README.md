@@ -19,8 +19,12 @@ DEMO_PASSWORD=<mot de passe alice> python3 attack.py probe --target http://192.1
 # Attaque XSS / injection SQL (le WAF BunkerWeb doit renvoyer 403)
 python3 attack.py xss  --target http://192.168.137.1
 
-# DDoS applicatif contrôlé (déclenche limitation de débit puis auto-ban)
+# DDoS applicatif contrôlé (déclenche limitation de débit puis auto-ban — le service tient)
 python3 attack.py ddos --target http://192.168.137.1 --workers 25 --duration 25
+
+# DDoS distribué simulé : fait vraiment tomber le WAF puis observe la reprise autonome
+# (demande le mode démo côté PC Hôte au préalable — voir section dédiée plus bas)
+DEMO_PASSWORD=<mot de passe alice> python3 attack.py overload --target http://192.168.137.1
 
 # Démonstration complète enchaînée
 DEMO_PASSWORD=<mot de passe alice> ./run_demo.sh http://192.168.137.1
@@ -38,8 +42,34 @@ Le mot de passe de l'utilisateur fictif `alice` est dans `secrets/demo_user_pass
 | Étape | Attendu côté défense |
 |---|---|
 | XSS / SQLi | BunkerWeb (ModSecurity/OWASP CRS) renvoie **403** ; Wazuh lève les règles 100101/100102 (visibles dans Grafana) ; panneau « Sécurité » de Grafana |
-| DDoS | BunkerWeb **limite (429)** puis **bannit (403)** l'IP source ; Wazuh lève la règle DDoS ; la **transaction synthétique interne reste verte** |
-| Après | La reprise automatique et/ou le bannissement ont préservé le service ; nouvelle transaction interne OK |
+| DDoS (`ddos`) | BunkerWeb **limite (429)** puis **bannit (403)** l'IP source ; Wazuh lève la règle DDoS ; la **transaction synthétique interne reste verte** (le WAF absorbe l'attaque, rien à réparer) |
+| DDoS distribué (`overload`, mode démo) | Le WAF lui-même devient indisponible (saturation réelle) ; alerte `WafDown` ; le moteur de remédiation le **redémarre seul** et vérifie par une vraie transaction |
+| Après | Service rétabli automatiquement ; nouvelle transaction (interne ou PC Attaquant selon le scénario) OK |
+
+## Démo de reprise autonome après incident (DDoS distribué simulé)
+Le limiteur de débit du WAF s'applique **par IP source** : un vrai DDoS vient de centaines de
+machines, chacune sous le seuil, et c'est leur effet **cumulé** qui sature le service. Pour
+reproduire cet effet agrégé depuis un seul PC Attaquant, on relève temporairement ce seuil côté
+PC Hôte (la protection par IP reste la posture par défaut entre deux démos) :
+
+```powershell
+# Sur le PC Hôte, AVANT l'attaque
+.\scripts\ops.ps1 ddos_demo -e mode=on
+```
+```bash
+# Sur le PC Attaquant
+DEMO_PASSWORD=<mot de passe alice> python3 attack.py overload --target http://192.168.137.1
+```
+Observer dans Grafana : l'alerte `WafDown` se déclenche, puis se résout — le moteur de
+remédiation a redémarré le WAF seul et vérifié la reprise par une transaction réelle (voir
+`remediation_succeeded` sur `http://127.0.0.1:<REMEDIATION_PORT>/events`). Puis, sur le PC Hôte :
+```powershell
+.\scripts\ops.ps1 ddos_demo -e mode=off   # restaure les défenses et revérifie toute la plateforme
+```
+**Pourquoi plusieurs processus ?** Un seul interpréteur Python plafonne à ~20-25 requêtes/s avec
+des fils d'exécution (verrou global de l'interpréteur), trop peu pour saturer quoi que ce soit.
+`overload` répartit donc la charge sur plusieurs **processus** du système (`--processes`, 6 par
+défaut) pour générer un vrai volume réseau. Mesuré en test : reprise autonome en 17 à 43 s.
 
 ## Démo « avant / après » du WAF (XSS)
 Pour montrer la valeur du WAF, basculer ModSecurity en observation puis en blocage :

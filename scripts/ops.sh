@@ -8,8 +8,8 @@ RUNNER_IMAGE="resilience/ops-runner:1.0"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 case "$PLAYBOOK" in
-  deploy|verify|backup|restore|recover|chaos|reload|teardown) ;;
-  *) echo "usage: $0 {deploy|verify|backup|restore|recover|chaos|reload|teardown} [args ansible]" >&2; exit 2 ;;
+  deploy|verify|backup|restore|recover|chaos|ddos_demo|reload|teardown) ;;
+  *) echo "usage: $0 {deploy|verify|backup|restore|recover|chaos|ddos_demo|reload|teardown} [args ansible]" >&2; exit 2 ;;
 esac
 
 docker info >/dev/null 2>&1 || { echo "Docker n'est pas joignable" >&2; exit 1; }

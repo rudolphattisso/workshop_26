@@ -17,7 +17,7 @@
 # Pas de [Parameter()]/[CmdletBinding()] : sinon PowerShell interprète « -e » comme -ErrorAction.
 # Tout ce qui suit le nom du playbook est transmis tel quel à ansible-playbook ($args).
 param(
-  [ValidateSet('deploy', 'verify', 'backup', 'restore', 'recover', 'chaos', 'reload', 'teardown')]
+  [ValidateSet('deploy', 'verify', 'backup', 'restore', 'recover', 'chaos', 'ddos_demo', 'reload', 'teardown')]
   [string]$Playbook = 'deploy'
 )
 $AnsibleArgs = @($args | Where-Object { $_ -ne '-RebuildRunner' })

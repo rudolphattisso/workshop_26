@@ -70,6 +70,20 @@ DEMO_PASSWORD=<mdp alice> ./attack/run_demo.sh http://192.168.137.1
 Démo « avant/après » du WAF : `WAF_RULE_ENGINE=DetectionOnly` dans `.env` + `ops reload` (les XSS
 passent mais sont journalisées), puis `=On` + `ops reload` (les XSS sont bloquées).
 
+**Reprise autonome après incident de disponibilité (DDoS distribué simulé)** — voir
+`attack/README.md` pour le détail. En résumé :
+```powershell
+.\scripts\ops.ps1 ddos_demo -e mode=on      # PC Hôte, avant l'attaque
+```
+```bash
+DEMO_PASSWORD=<mdp alice> python3 attack.py overload --target http://192.168.137.1   # PC Attaquant
+```
+Observer dans Grafana : `WafDown` se déclenche puis se résout (le WAF redémarre seul et vérifie
+par une vraie transaction). Puis, sur le PC Hôte :
+```powershell
+.\scripts\ops.ps1 ddos_demo -e mode=off     # restaure les défenses et revérifie toute la plateforme
+```
+
 ## PROC-05ter — SIEM Wazuh : plus d'alertes dans Grafana
 **Symptômes** : la section « SIEM Wazuh » du dashboard reste vide malgré une attaque.
 1. État : `docker compose ps wazuh.manager wazuh-agent logshipper alloy`.

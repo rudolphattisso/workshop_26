@@ -7,17 +7,33 @@ Interdit : réseaux du campus, autres groupes, services tiers, Internet (cf. cah
 débit modéré) : il sert à rendre une attaque OBSERVABLE par la chaîne de détection.
 
 Sous-commandes :
-  xss    envoie des charges XSS/injection ; montre ce que le WAF bloque (403)
-  ddos   flood HTTP applicatif contrôlé ; déclenche la limitation de débit + l'auto-ban BunkerWeb
-  probe  exécute une transaction légitime (login -> paiement) ; prouve que le service répond
+  xss      envoie des charges XSS/injection ; montre ce que le WAF bloque (403)
+  ddos     flood HTTP applicatif contrôlé ; déclenche la limitation de débit + l'auto-ban BunkerWeb
+  overload DDoS distribué simulé (connexions authentifiées, volumineux) ; voir plus bas
+  probe    exécute une transaction légitime (login -> paiement) ; prouve que le service répond
 
 Exemples :
-  python3 attack.py probe --target http://192.168.137.1
-  python3 attack.py xss   --target http://192.168.137.1
-  python3 attack.py ddos  --target http://192.168.137.1 --workers 25 --duration 25
+  python3 attack.py probe    --target http://192.168.137.1
+  python3 attack.py xss      --target http://192.168.137.1
+  python3 attack.py ddos     --target http://192.168.137.1 --workers 25 --duration 25
+  python3 attack.py overload --target http://192.168.137.1 --password <mdp alice>
+
+« overload » — démo de reprise autonome après incident de disponibilité
+-------------------------------------------------------------------------
+Le limiteur de débit du WAF (WAF_API_RATE) s'applique PAR IP SOURCE : un vrai DDoS distribué
+vient de centaines de machines, chacune sous le seuil, dont l'effet CUMULÉ sature le WAF.
+Un seul PC Attaquant ne peut reproduire ce volume qu'en étant autorisé, le temps de la démo,
+à dépasser le seuil par IP (voir « ops ddos_demo -e mode=on » côté PC Hôte, RUNBOOK.md PROC-05bis) :
+cela représente fidèlement l'effet agrégé d'un DDoS distribué, sans affaiblir la protection par
+IP qui reste active entre deux démos. Cette sous-commande ouvre une session (login) puis envoie
+un flot soutenu de VRAIS paiements authentifiés, en volume : assez pour saturer réellement la
+capacité du WAF (CPU/connexions), et non plus seulement se faire bloquer. Observé en test :
+le WAF devient indisponible, Prometheus déclenche `WafDown`, le moteur de remédiation le
+redémarre, puis vérifie la reprise par une transaction réelle — entièrement automatique.
 """
 import argparse
 import json
+import multiprocessing
 import ssl
 import sys
 import threading
@@ -139,21 +155,95 @@ def cmd_ddos(args):
     return 0
 
 
+def _overload_subprocess(target, host_header, token, n_threads, duration, out_queue):
+    """Exécuté dans un PROCESSUS séparé (voir cmd_overload) : un seul interpréteur Python ne
+    dépasse pas ~20-25 req/s avec des threads (bloqués par le GIL sur des I/O réseau fines),
+    bien en-deçà de ce qu'il faut pour réellement saturer le WAF. Plusieurs processus en
+    parallèle contournent cette limite et donnent une charge réseau réelle."""
+    stop = time.time() + duration
+    counts = Counter()
+    lock = threading.Lock()
+
+    def worker():
+        while time.time() < stop:
+            status, _ = request("POST", f"{target}/api/payments", host_header,
+                                 {"amount": "1.00", "currency": "EUR", "merchant": "OVERLOAD-DEMO"},
+                                 token=token, timeout=4)
+            with lock:
+                counts[status] += 1
+
+    with ThreadPoolExecutor(max_workers=n_threads) as ex:
+        for _ in range(n_threads):
+            ex.submit(worker)
+    out_queue.put(dict(counts))
+
+
+def cmd_overload(args):
+    import os
+    pw = args.password or os.getenv("DEMO_PASSWORD", "")
+    if not pw:
+        print("!! fournir --password (mot de passe de l'utilisateur fictif alice)"); return 2
+    print(f"== Connexion (session authentifiée) vers {args.target}...")
+    status, body = request("POST", f"{args.target}/api/auth/login", args.host_header,
+                           {"username": args.user, "password": pw})
+    if status != 200:
+        print(f"!! login -> {status} : le service doit être disponible AVANT de lancer la surcharge"); return 1
+    token = json.loads(body)["access_token"]
+
+    n_procs = max(1, args.processes)
+    threads_per_proc = max(1, args.workers // n_procs)
+    print(f"== Session ouverte. Flot de paiements authentifiés : {n_procs} processus x {threads_per_proc} "
+          f"ouvriers (~{n_procs * threads_per_proc} au total), {args.duration}s")
+    print("   (simule l'effet agrégé d'un DDoS distribué — voir le WAF_API_RATE relevé côté PC Hôte)")
+
+    out_queue = multiprocessing.Queue()
+    procs = [multiprocessing.Process(target=_overload_subprocess,
+                                      args=(args.target, args.host_header, token, threads_per_proc,
+                                            args.duration, out_queue))
+             for _ in range(n_procs)]
+    for p in procs:
+        p.start()
+
+    counts = Counter()
+    for _ in procs:
+        counts.update(out_queue.get())
+    for p in procs:
+        p.join()
+
+    total = sum(counts.values())
+    print(f"== {total} requêtes envoyées (~{total / max(args.duration, 1):.0f} req/s)")
+    for code in sorted(counts, key=lambda c: (c == 0, c)):
+        label = {201: "paiement accepté", 403: "bloqué/banni", 429: "limité", 0: "timeout/refus (WAF saturé)"}.get(code, "")
+        print(f"   {'TIMEOUT' if code == 0 else 'HTTP ' + str(code):>9} : {counts[code]:5}  {label}")
+    if counts[0] > total * 0.1:
+        print("   -> Le WAF semble saturé (timeouts). Vérifiez Grafana : alerte WafDown,")
+        print("      puis remediation_succeeded dans http://127.0.0.1:<REMEDIATION_PORT>/events.")
+    else:
+        print("   -> Pas de saturation nette. Augmenter --processes/--workers/--duration si besoin.")
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description="Banc d'attaque de démonstration (lab uniquement).")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("xss", "ddos", "probe"):
+    for name in ("xss", "ddos", "overload", "probe"):
         p = sub.add_parser(name)
         p.add_argument("--target", required=True, help="ex. http://192.168.137.1")
         p.add_argument("--host-header", default=None, help="En-tête Host si nécessaire (ex. localhost en test local)")
         if name == "ddos":
             p.add_argument("--workers", type=int, default=25)
             p.add_argument("--duration", type=int, default=25)
+        if name == "overload":
+            p.add_argument("--workers", type=int, default=240, help="nombre total d'ouvriers, répartis sur --processes processus")
+            p.add_argument("--processes", type=int, default=6, help="processus OS séparés (contourne le GIL ; un seul process plafonne ~20 req/s)")
+            p.add_argument("--duration", type=int, default=30)
+            p.add_argument("--user", default="alice")
+            p.add_argument("--password", default=None)
         if name == "probe":
             p.add_argument("--user", default="alice")
             p.add_argument("--password", default=None)
     args = ap.parse_args()
-    return {"xss": cmd_xss, "ddos": cmd_ddos, "probe": cmd_probe}[args.cmd](args)
+    return {"xss": cmd_xss, "ddos": cmd_ddos, "overload": cmd_overload, "probe": cmd_probe}[args.cmd](args)
 
 
 if __name__ == "__main__":
