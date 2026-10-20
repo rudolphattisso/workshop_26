@@ -2,5 +2,6 @@
 -e ./common
 -r payment-api/requirements.txt
 -r auth/requirements.txt
+-r smoke-test/requirements.txt
 pytest==8.3.4
 httpx==0.28.1
