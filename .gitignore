@@ -1,0 +1,22 @@
+# doc 
+doc/private/
+
+
+# Claude Code : préférences personnelles
+CLAUDE.local.md
+.claude/settings.local.json
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Éditeurs / IDE
+.vscode/
+.idea/
+*.swp
+
+# Secrets / environnement
+.env
+.env.*
+!.env.example
