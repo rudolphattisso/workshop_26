@@ -40,7 +40,7 @@
 ## 2026-10-20 — Branches Git et contrat de l'API métier
 
 **Fait**
-- Création de la branche d'intégration `develop` (flux : `dev/<sujet>` → `develop` → `main`)
+- Création de la branche d'intégration `develop` (flux Dev, à titre exceptionnel : `dev/<sujet>` → `dev/app` → `develop` → `main`)
 - Renommage de `app_dev` en `dev/app` (convention `<domaine>/<sujet>`) ; PR #1 `dev/app` → `develop` mergée
 - Rédaction du contrat `contracts/openapi-payment.yaml` (auth + comptes + paiements + contrôle de cohérence)
 
