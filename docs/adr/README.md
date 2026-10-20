@@ -6,3 +6,4 @@ Format : `ADR-<DOMAINE>-NNNN-titre-court.md` — domaines : DEV, INFRA, AI, SEC,
 |-----|-------|---------|--------|------|
 | [ADR-DEV-0001](ADR-DEV-0001-stack-dev.md) | Stack du domaine Dev | DEV | accepté | 2026-10-20 |
 | [ADR-DEV-0002](ADR-DEV-0002-paiement-synchrone-idempotent.md) | Paiement synchrone et idempotent | DEV | accepté | 2026-10-20 |
+| [ADR-DEV-0003](ADR-DEV-0003-auth-jwt-rs256-jwks.md) | Service d'auth : JWT RS256, JWKS en cache, clé éphémère | DEV | accepté | 2026-10-20 |

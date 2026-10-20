@@ -1,10 +1,17 @@
+import json
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 
+import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
+from jwt.algorithms import RSAAlgorithm
+from resilience_common.jwt_auth import AUDIENCE, ISSUER, JwksKeyStore
 from sqlalchemy import func, select, text
 
+from app import security
 from app.db import get_engine, get_sessionmaker
 from app.main import app
 from app.models import Account, LedgerEntry, Payment, PaymentStatus
@@ -124,6 +131,26 @@ def test_unauthenticated_request_is_401():
     response = TestClient(app).get("/accounts")
     assert response.status_code == 401
     assert response.headers["WWW-Authenticate"] == "Bearer"
+
+
+def test_real_jwt_from_auth_service_is_accepted(monkeypatch):
+    """Sans substitution : un jeton RS256 au format du service d'auth, vérifié via le JWKS."""
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    public_jwk = {**json.loads(RSAAlgorithm.to_jwk(key.public_key())), "kid": "test-kid"}
+    store = JwksKeyStore("unused", fetch=lambda: {"keys": [public_jwk]})
+    monkeypatch.setattr(security, "_jwks", lambda: store)
+
+    now = datetime.now(timezone.utc)
+    token = jwt.encode(
+        {"iss": ISSUER, "aud": AUDIENCE, "sub": str(ALICE.id), "role": "client", "jti": "j", "iat": now,
+         "exp": now + timedelta(minutes=15)},
+        key, algorithm="RS256", headers={"kid": "test-kid"},
+    )
+    client = TestClient(app)
+    accounts = client.get("/accounts", headers={"Authorization": f"Bearer {token}"})
+    assert accounts.status_code == 200
+    assert [a["id"] for a in accounts.json()] == [str(account_id("alice"))]
+    assert client.get("/operations/consistency", headers={"Authorization": f"Bearer {token}"}).status_code == 403
 
 
 # ------------------------------------------------------------------ concurrence
