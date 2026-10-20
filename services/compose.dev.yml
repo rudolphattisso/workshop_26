@@ -14,3 +14,16 @@ services:
       test: ["CMD-SHELL", "pg_isready -U payment_api -d payment"]
       interval: 5s
       retries: 10
+
+  auth-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: auth
+      POSTGRES_USER: auth_service
+      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD:?définir AUTH_DB_PASSWORD dans services/.env}
+    ports:
+      - "127.0.0.1:5434:5432" # uniquement en local, jamais sur le réseau
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auth_service -d auth"]
+      interval: 5s
+      retries: 10

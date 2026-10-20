@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: RESILIENCE-ALPHA — API métier (auth + paiements)
-  version: 0.2.0
+  version: 0.3.0
   description: |
     Contrat de l'API métier de la plateforme de paiement **fictive**.
     Producteur : Dev (`services/auth`, `services/payment-api`).
@@ -272,8 +272,10 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: |
-        JWT RS256 émis par `/auth/login`. Claims : `sub` (user id), `role` (`client` | `operator`),
-        `jti`, `iat`, `exp` (15 min). Vérifié via `/auth/.well-known/jwks.json`.
+        JWT RS256 émis par `/auth/login`. En-tête : `kid` (empreinte RFC 7638 de la clé).
+        Claims : `iss` = `resilience-alpha-auth`, `aud` = `resilience-alpha`, `sub` (user id),
+        `role` (`client` | `operator`), `jti`, `iat`, `exp` (15 min). Vérifié via `/auth/.well-known/jwks.json`.
+        Un `kid` inconnu déclenche un rechargement du JWKS : redémarrer l'auth (clé éphémère) révoque tous les jetons.
 
   parameters:
     AccountId:
