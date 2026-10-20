@@ -136,3 +136,9 @@ Les durées réellement mesurées sont dans `reports\` (playbook `chaos`) et dan
 **Perte du dossier `secrets/`** : `.\scripts\ops.ps1 deploy` le reconstruit depuis Vault (les valeurs sont conservées).
 **Perte du volume Vault** : les secrets sont régénérés au prochain `deploy` ; les mots de passe de la base ne
 correspondent plus → `.\scripts\ops.ps1 recover -e wipe_data=true` (restaure ensuite depuis une sauvegarde).
+
+## PROC-13 — Console BunkerWeb (voir et débannir une IP)
+Console : http://127.0.0.1:17000 (utilisateur `admin`, mot de passe = `BW_UI_PASSWORD` dans `.env`).
+- **Bannissements** : menu *Bans* — liste des IP bannies (bad behavior / DDoS) ; on peut en lever un avant son expiration (5 min par défaut).
+- **Instances** : menu *Instances* — état de l'instance WAF (UP/DOWN).
+- Les réglages (débit, seuils, ModSecurity) viennent du `docker-compose.yml` / `.env` : les modifier dans la console serait écrasé au prochain `ops deploy`.

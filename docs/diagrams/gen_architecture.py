@@ -121,7 +121,7 @@ p1.box(262, 60, 36, 1480, "Point d'accès mobile Windows « RESILIENCE-G&lt;n&gt
 
 # PC Hôte
 p1.box(320, 40, 1480, 1520, "<b>PC Hôte — 192.168.137.1</b> · Windows 11 · Docker Desktop (WSL2) · projet Compose "
-       "« resilience » — 23 conteneurs", "#fafafa", "#333333",
+       "« resilience » — 24 conteneurs", "#fafafa", "#333333",
        "verticalAlign=top;align=left;spacingLeft=10;fontSize=13;strokeWidth=2;arcSize=1;")
 
 # Zones réseau
@@ -167,7 +167,7 @@ p1.svc(1420, 910, 320, 150, "Volumes nommés", "pgdata · prometheus-data · lok
 admin = p1.svc(1420, 130, 320, 80, "Opérateur sur le PC Hôte", "navigateur local", "mgmt")
 ports = p1.svc(1420, 250, 320, 220, "Interfaces d'administration",
                "127.0.0.1:3000 → Grafana<br>127.0.0.1:9090 → Prometheus<br>127.0.0.1:9093 → Alertmanager<br>"
-               "127.0.0.1:18090 → Remédiation (/events)<br><br>"
+               "127.0.0.1:18090 → Remédiation (/events)<br>127.0.0.1:17000 → Console BunkerWeb<br>127.0.0.1:18200 → Vault<br>"
                "Base, Loki, Wazuh,<br>exporters, proxies : <b>jamais publiés</b>", "mgmt")
 ans = p1.svc(1420, 570, 320, 240, "Runner Ansible (conteneur éphémère)",
              "scripts/ops.ps1 &lt;action&gt;<br>deploy · verify · backup · restore<br>recover (PRA) · chaos · reload · teardown<br><br>"
@@ -275,6 +275,8 @@ flows = [
     ("F29", "Alloy", "Loki", "monitoring", "TCP 3100 HTTP push", "Alertes Wazuh stockées et interrogeables dans Grafana", "Règles Loki → Alertmanager (WazuhXss/Sqli/Ddos/BruteForce/HighSeverity)", Sm),
     ("F31", "Ansible (runner)", "Vault", "docker exec via vault-unsealer", "jeton ansible-ops (politique resilience/*)", "Lecture/écriture des secrets de la plateforme", "Politique moindre privilège ; Vault n'est joignable que sur le réseau interne vault + loopback", A),
     ("F32", "vault-unsealer", "Vault", "vault", "TCP 8200 HTTP", "Initialisation, descellement automatique, configuration", "Réseau interne vault ; clés stockées dans un volume dédié (compromis de lab documenté)", A),
+    ("F33", "Opérateur (PC Hôte)", "bunkerweb-ui (console WAF)", "mgmt (loopback)", "127.0.0.1:17000 HTTP", "Visualiser le WAF, les IP bannies, les instances", "Liée à 127.0.0.1 ; authentification admin (mot de passe généré)", A),
+    ("F34", "bunkerweb-ui", "bunkerweb (API) + base SQLite partagée", "bw-universe", "TCP 5000 HTTP (API) + volume bw-data", "Lecture de l'état du WAF et gestion des bans", "Réseau interne bw-universe ; jeton d'API ; la config « as code » reste dans le compose", A),
     ("A1", "PC Attaquant", "BunkerWeb (WAF)", "LAN → edge", "TCP 80 HTTP", "Attaques XSS / SQLi / DDoS (démo)", "Bloquées (403) ou limitées/bannies (429→403) ; Wazuh lève les alertes 1001xx", Atk),
 ]
 end = p2.table(20, 60, cols, [list(f[:7]) for f in flows], row_h=46, fills=[f[7] + "33" for f in flows])
@@ -298,7 +300,7 @@ p3 = Page("3 - Inventaire serveurs", 1760, 1480)
 p3.text(20, 10, 1600, 30, "<font style='font-size:20px'><b>Inventaire</b> — machines physiques et conteneurs</font>")
 mcols = [("Machine", 150), ("Adresse", 170), ("Système", 260), ("Ressources", 250), ("Rôle", 330), ("Exposition", 330)]
 machines = [
-    ["PC Hôte", "192.168.137.1 (hotspot)", "Windows 11 · Docker Desktop 29 (WSL2)", "4+ cœurs · 16 Go (6–8 Go pour Docker) · 50 Go SSD", "Exécute les 23 conteneurs + runner Ansible", "80/tcp sur le hotspot ; admin sur 127.0.0.1"],
+    ["PC Hôte", "192.168.137.1 (hotspot)", "Windows 11 · Docker Desktop 29 (WSL2)", "4+ cœurs · 16 Go (6–8 Go pour Docker) · 50 Go SSD", "Exécute les 24 conteneurs + runner Ansible", "80/tcp sur le hotspot ; admin sur 127.0.0.1"],
     ["PC Attaquant", "192.168.137.x (DHCP)", "Kali Linux / outils Red Team", "8–16 Go RAM", "Scénarios offensifs depuis un poste distinct", "Aucune ; cible autorisée = 192.168.137.1:80"],
     ["PC IA (déporté)", "192.168.137.y (DHCP)", "Windows / Linux · Ollama", "16 Go RAM, GPU conseillé", "LLM ≤ 8B + RAG LangChain — déporté pour libérer la RAM du PC Hôte", "11434/tcp vers le PC Hôte uniquement"],
 ]
@@ -309,6 +311,7 @@ ccols = [("Service", 140), ("Image", 270), ("Rôle", 190), ("Port interne", 90),
 containers = [
     ["bunkerweb", "bunkerity/bunkerweb:1.6.16", "WAF / reverse proxy (données)", "8080", "0.0.0.0:80", "edge, app, monitoring, bw-universe", "nginx (101)", "384 Mo", "cap_drop ALL, no-new-privileges"],
     ["bunkerweb-scheduler", "bunkerity/bunkerweb-scheduler:1.6.16", "WAF — plan de contrôle", "—", "—", "bw-universe", "root", "384 Mo", "API interne + jeton"],
+    ["bunkerweb-ui", "bunkerity/bunkerweb-ui:1.6.16", "Console web du WAF", "7000", "127.0.0.1:17000", "bw-universe, mgmt", "ui", "256 Mo", "loopback uniquement ; mot de passe généré"],
     ["frontend", "resilience/frontend (nginx-unprivileged)", "Frontal web", "8080", "—", "app", "nginx (101)", "64 Mo", "FS lecture seule"],
     ["auth", "resilience/auth (python 3.12)", "Authentification JWT", "8000", "—", "app, data, monitoring", "10001", "192 Mo", "FS lecture seule, secrets fichiers"],
     ["payment-api", "resilience/payment-api (python 3.12)", "API de paiement", "8000", "—", "app, data, monitoring", "10001", "192 Mo", "FS lecture seule, secrets fichiers"],

@@ -67,6 +67,7 @@ volumes:
   grafana-data:
   alloy-data:
   bw-data:
+  bw-ui-data:
   wazuh_api_configuration:
   wazuh_etc:
   wazuh_logs:
@@ -112,7 +113,7 @@ services:
     environment:
       AUTOCONF_MODE: "no"
       API_WHITELIST_IP: "127.0.0.0/8 172.30.80.0/24"   # API interne : réseau bw-universe seulement
-      API_TOKEN: ${BW_API_TOKEN:-changeme-bw-token}
+      API_TOKEN: ${BW_API_TOKEN:?défini par ops deploy dans .env}
     networks: [edge, app, monitoring, bw-universe]
     depends_on: [frontend]
     labels: { resilience.tier: edge }
@@ -124,7 +125,8 @@ services:
     logging: *logging
     environment:
       BUNKERWEB_INSTANCES: "bunkerweb"
-      API_TOKEN: ${BW_API_TOKEN:-changeme-bw-token}
+      API_TOKEN: ${BW_API_TOKEN:?défini par ops deploy dans .env}
+      DATABASE_URI: "sqlite:////data/db.sqlite3"   # partagée avec la console (bunkerweb-ui)
       # Accès : liste des noms d'hôte acceptés (ajouter l'IP du hotspot pour la démo via .env)
       SERVER_NAME: ${PUBLIC_SERVER_NAME:-localhost 127.0.0.1 bunkerweb}
       MULTISITE: "no"
@@ -175,6 +177,29 @@ services:
       retries: 6
     labels: { resilience.tier: edge }
     deploy: { resources: { limits: { memory: 384m, cpus: "1.0" } } }
+
+  # Console web BunkerWeb (GUI) : tableau de bord WAF, requêtes bloquées, IP bannies, règles actives.
+  # Publiée sur 127.0.0.1 uniquement. Les réglages posés par le scheduler (compose/.env) restent
+  # la source de vérité « as code » : la console sert à observer et gérer les bannissements.
+  bunkerweb-ui:
+    image: ${WAF_UI_IMAGE:-bunkerity/bunkerweb-ui:1.6.16}
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      DATABASE_URI: "sqlite:////db/db.sqlite3"
+      API_TOKEN: ${BW_API_TOKEN:?défini par ops deploy dans .env}
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: ${BW_UI_PASSWORD:?défini par ops deploy dans .env}
+      OVERRIDE_ADMIN_CREDS: "yes"
+      UI_FORWARDED_ALLOW_IPS: "127.0.0.1"
+    volumes:
+      - bw-data:/db
+      - bw-ui-data:/data
+    ports: ["${ADMIN_BIND_ADDR:-127.0.0.1}:${BW_UI_PORT:-17000}:7000"]
+    networks: [bw-universe, mgmt]
+    depends_on: [bunkerweb-scheduler]
+    labels: { resilience.tier: edge }
+    deploy: { resources: { limits: { memory: 256m, cpus: "0.5" } } }
 
   frontend:
     <<: *hardening

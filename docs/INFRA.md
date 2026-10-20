@@ -34,6 +34,7 @@
 | **Ansible** | *Comment opère-t-on la plateforme de façon reproductible ?* | Procédures codées et idempotentes : préflight, génération des secrets, validation des configs, déploiement, vérification fonctionnelle, sauvegarde, restauration, **PRA**, recette chaos | N'est pas dans la boucle de remédiation temps réel (trop lent, trop privilégié) |
 | **BunkerWeb** (WAF) | *Comment filtrer le trafic entrant ?* | Point d'entrée unique : nginx + ModSecurity + OWASP CRS v4 (bloque XSS/SQLi), limitation de débit et **bannissement automatique** des IP « bad behavior » (anti-DoS), reverse proxy vers les microservices | Export Prometheus = option PRO → supervision via blackbox + Loki |
 | **HashiCorp Vault** | *Où vivent les secrets ?* | **Source de vérité** des 9 secrets de la plateforme (KV v2 `resilience/`), audit activé, politiques moindre privilège ; Ansible y range les secrets et reconstruit `./secrets/` depuis Vault (PRA) ; descellement automatique après un redémarrage | Les conteneurs lisent toujours des Docker secrets (copie d'exécution) : Vault ne sert pas de runtime en ligne aux services |
+| **Console BunkerWeb** (GUI) | *Que fait le WAF en ce moment ?* | Tableau de bord du WAF : instances, requêtes, IP bannies, règles ; publiée sur `127.0.0.1:17000` (mot de passe généré dans `.env`) | Les réglages du compose restent la source de vérité « as code » : la console sert à observer et gérer les bannissements |
 | **Prometheus** | *Dans quel état sont les services ?* | Scrape toutes les 5 s : métriques applicatives, sondes boîte noire via le WAF, conteneurs, base ; évalue les règles d'alerte | — |
 | **Loki + Alloy** | *Que s'est-il passé ?* | Centralise les journaux stdout de **tous** les conteneurs (découverte automatique), règles LogQL de sécurité (fonction SOC légère) | Pas d'Elastic : Loki n'indexe que les labels → ~10× moins de RAM |
 | **Wazuh** (SIEM/HIDS) | *Quelles menaces de sécurité ?* | Moteur de détection : un agent surveille toute la plateforme (FIM, rootcheck, SCA, analyse des journaux) ; le manager applique des règles XSS/SQLi/DDoS/force brute et **envoie ses alertes en syslog JSON vers Loki** → visualisées et alertées dans **Grafana** | Pas de dashboard ni d'indexer Wazuh (OpenSearch = Elastic, écarté par le sujet) : un seul outil de visualisation |
@@ -103,7 +104,7 @@ l'agent analyse. Les conteneurs applicatifs restent intacts (non-root, FS en lec
 | `control` | oui | remediation, docker-proxy | plan de contrôle isolé |
 | `dockerapi-ro` | oui | alloy, logshipper, docker-proxy-ro | lecture des logs/API Docker |
 | `mgmt` | non | grafana, prometheus, alertmanager, remediation | publication sur 127.0.0.1 |
-| `bw-universe` | oui | bunkerweb, bunkerweb-scheduler | plan de contrôle du WAF (API interne) |
+| `bw-universe` | oui | bunkerweb, bunkerweb-scheduler, bunkerweb-ui | plan de contrôle du WAF (API interne) |
 | `vault` | oui | vault, vault-unsealer | Vault et son sidecar de descellement (+ vault sur `mgmt` pour l'UI loopback) |
 | `siem` | oui | wazuh.manager, wazuh-agent, alloy | SIEM Wazuh (agent → manager ; alertes du manager → Alloy → Loki) |
 

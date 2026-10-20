@@ -8,6 +8,7 @@
     - ansible.builtin.import_tasks: ../tasks/vault_up.yml
     - ansible.builtin.import_tasks: ../tasks/secrets.yml
     - ansible.builtin.import_tasks: ../tasks/wazuh_prepare.yml
+    - ansible.builtin.import_tasks: ../tasks/bunkerweb_prepare.yml
 
     - name: "Validation | Syntaxe du fichier Compose"
       ansible.builtin.command: "{{ compose }} config --quiet"
