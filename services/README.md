@@ -15,13 +15,28 @@ cd services
 python -m venv .venv
 .venv/Scripts/python -m pip install -r requirements-dev.txt
 
-# Tests
-.venv/Scripts/python -m pytest common/tests payment-api/tests
+# Base PostgreSQL locale (127.0.0.1:5433) — copier d'abord .env.example en .env et changer le mot de passe
+docker compose -f compose.dev.yml --env-file .env up -d --wait
+set -a && . ./.env && set +a          # exporte DATABASE_URL
+
+# Tests (ceux de payment-api VIDENT la base pointée par DATABASE_URL)
+.venv/Scripts/python -m pytest common/tests
+(cd payment-api && ../.venv/Scripts/python -m pytest)
+
+# Schéma et comptes de démo
+(cd payment-api && ../.venv/Scripts/alembic upgrade head && ../.venv/Scripts/python -m app.seed)
 
 # Lancer un service avec la doc interactive sur http://127.0.0.1:8000/docs
 cd payment-api
 ENABLE_DOCS=true ../.venv/Scripts/python -m uvicorn app.main:app --reload
 ```
+
+## payment-api : données
+
+- Modèles : `payment-api/app/models.py` (comptes, paiements, grand livre). Migrations : `payment-api/migrations/`.
+- Nouvelle migration : modifier les modèles puis `alembic revision --autogenerate -m "..."`, **relire** le fichier généré.
+- Au démarrage du conteneur (`docker-entrypoint.sh`) : `alembic upgrade head` (avec attente de la base),
+  seed idempotent, puis Uvicorn.
 
 ## Construire une image
 

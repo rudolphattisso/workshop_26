@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 
 import pytest
 from fastapi import HTTPException
@@ -52,6 +53,15 @@ def test_ready_ok_without_checks():
 
 def test_ready_503_when_a_dependency_is_down():
     response = make_client({"database": failing_check}).get("/ready")
+    assert response.status_code == 503
+    assert response.json()["checks"] == {"database": "down"}
+
+
+def test_ready_answers_fast_when_a_dependency_hangs(monkeypatch):
+    monkeypatch.setattr("resilience_common.probes.READY_CHECK_TIMEOUT", 0.2)
+    start = time.perf_counter()
+    response = make_client({"database": lambda: time.sleep(2)}).get("/ready")
+    assert time.perf_counter() - start < 1
     assert response.status_code == 503
     assert response.json()["checks"] == {"database": "down"}
 
