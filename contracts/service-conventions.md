@@ -31,7 +31,14 @@ Services Python du domaine Dev : `auth`, `payment-api`, `remediation`, `smoke-te
 | `service_dependency_up` | gauge | `service`, `dependency` | État des dépendances au dernier `/ready` |
 
 `route` contient la **route modèle** (`/payments/{paymentId}`), jamais l'URL brute. Les requêtes hors route sont
-regroupées sous `unmatched`. Les métriques métier (paiements capturés ou refusés…) seront ajoutées et documentées ici.
+regroupées sous `unmatched`.
+
+Métriques métier de `payment-api` :
+
+| Métrique | Type | Labels | Usage |
+|---|---|---|---|
+| `payments_total` | counter | `status` (`CAPTURED`/`REJECTED`), `reason` (motif de refus, vide si capturé) | Débit métier, pic de refus (feature ML) |
+| `payment_idempotent_replays_total` | counter | — | Rejeux client : un pic signale des timeouts ou une perturbation |
 
 ## Logs
 
