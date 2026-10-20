@@ -47,7 +47,7 @@ Durée : ~5 min au premier lancement (téléchargement des images), < 1 min ensu
 
 | Interface | URL | Exposition |
 |---|---|---|
-| Application (via WAF BunkerWeb) | `http://<IP-hote>/` (ex. `http://192.168.137.1/`) | réseau du hotspot |
+| Application (via WAF BunkerWeb) | `http://<IP-hote>/` ou `https://<IP-hote>/` (certificat auto-signé : avertissement navigateur normal) | réseau du hotspot |
 | Grafana | http://127.0.0.1:3000 — dashboard *Resilience-Alpha* (métriques, logs, alertes, **section SIEM Wazuh**) | local uniquement |
 | Vault (secrets) | http://127.0.0.1:18200 — jeton : `docker exec resilience-vault-unsealer-1 cat /vault/keys/root_token` | local uniquement |
 | **Console BunkerWeb (GUI du WAF)** | http://127.0.0.1:17000 — utilisateur `admin`, mot de passe : valeur `BW_UI_PASSWORD` du fichier `.env` | local uniquement |

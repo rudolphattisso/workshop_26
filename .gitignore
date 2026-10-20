@@ -15,3 +15,4 @@ __pycache__/
 
 # Exports de données (logs Wazuh pour le ML) : volumineux, non versionnés
 exports/
+.vscode/

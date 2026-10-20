@@ -34,9 +34,21 @@
       changed_when: "'Built' in build.stderr or 'naming to' in build.stderr"
 
     - name: "Run | Démarrage / convergence des conteneurs (attente des healthchecks)"
-      ansible.builtin.command: "{{ compose }} up -d --remove-orphans --wait --wait-timeout 360"
-      register: up
-      changed_when: "'Started' in up.stderr or 'Recreated' in up.stderr or 'Created' in up.stderr"
+      # Résilient aux ports d'administration tombés dans une plage réservée par Windows après
+      # un redémarrage de Docker Desktop (voir tasks/compose_up_resilient.yml) : bascule seule
+      # sur un port libre et met .env à jour plutôt que d'échouer.
+      vars:
+        compose_up_args: "-d --remove-orphans --wait --wait-timeout 360"
+        port_env_map: >-
+          {{ {
+            lookup('ansible.builtin.ini', 'GRAFANA_PORT', file=project_dir ~ '/.env', type='properties', default='3000'): 'GRAFANA_PORT',
+            lookup('ansible.builtin.ini', 'PROMETHEUS_PORT', file=project_dir ~ '/.env', type='properties', default='9090'): 'PROMETHEUS_PORT',
+            lookup('ansible.builtin.ini', 'ALERTMANAGER_PORT', file=project_dir ~ '/.env', type='properties', default='9093'): 'ALERTMANAGER_PORT',
+            lookup('ansible.builtin.ini', 'REMEDIATION_PORT', file=project_dir ~ '/.env', type='properties', default='18090'): 'REMEDIATION_PORT',
+            lookup('ansible.builtin.ini', 'BW_UI_PORT', file=project_dir ~ '/.env', type='properties', default='17000'): 'BW_UI_PORT',
+            lookup('ansible.builtin.ini', 'VAULT_PORT', file=project_dir ~ '/.env', type='properties', default='18200'): 'VAULT_PORT',
+          } }}
+      ansible.builtin.include_tasks: ../tasks/compose_up_resilient.yml
 
     - ansible.builtin.import_tasks: ../tasks/attach_controller.yml
     - ansible.builtin.import_tasks: ../tasks/vars_urls.yml

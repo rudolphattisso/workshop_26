@@ -110,6 +110,7 @@ services:
     image: ${WAF_IMAGE:-bunkerity/bunkerweb:1.6.16}
     ports:
       - "${PUBLIC_BIND_ADDR:-0.0.0.0}:${PUBLIC_HTTP_PORT:-80}:8080"
+      - "${PUBLIC_BIND_ADDR:-0.0.0.0}:${PUBLIC_HTTPS_PORT:-443}:8443"
     environment:
       AUTOCONF_MODE: "no"
       API_WHITELIST_IP: "127.0.0.0/8 172.30.80.0/24"   # API interne : réseau bw-universe seulement
@@ -183,6 +184,23 @@ services:
       # On supervise le WAF via blackbox (disponibilité) et via Loki (débit, blocages,
       # bannissements) : voir infra/loki/rules et le dashboard Grafana.
       USE_METRICS: "yes"
+      # --- TLS : certificat auto-signé généré et renouvelé automatiquement par le scheduler.
+      # Un labo n'a pas d'autorité de certification publique ; le navigateur affichera un
+      # avertissement (certificat non reconnu), à expliquer au jury. Le trafic est chiffré
+      # entre le PC Attaquant/jury et le WAF ; en interne (WAF -> microservices) il reste en
+      # clair sur les réseaux Docker internes (non exposés, voir docs/INFRA.md §5).
+      GENERATE_SELF_SIGNED_SSL: "yes"
+      SELF_SIGNED_SSL_ALGORITHM: "ec-prime256v1"
+      SELF_SIGNED_SSL_EXPIRY: "365"
+      SELF_SIGNED_SSL_SUBJ: "${BW_TLS_SUBJECT:-/CN=alphapay.local/}"
+      # Pas de redirection HTTP->HTTPS forcée : blackbox, txprobe et la vérification de
+      # remédiation parlent en clair à bunkerweb:8080 EN INTERNE (réseaux Docker internes,
+      # non exposés) ; rediriger casserait silencieusement la preuve de reprise. HTTP :80
+      # reste donc disponible en parallèle de :443, par choix assumé — voir docs/INFRA.md §5.
+      # IMPORTANT : AUTO_REDIRECT_HTTP_TO_HTTPS vaut "yes" PAR DÉFAUT dès qu'un certificat existe
+      # (contre-intuitif) ; il faut le forcer à "no" explicitement, sinon le port interne 8080
+      # redirige (et casse en plus le Host interne, ex. https://bunkerweb:8080 qui ne parle pas TLS).
+      AUTO_REDIRECT_HTTP_TO_HTTPS: "no"
     volumes:
       - bw-data:/data
     networks: [bw-universe]
