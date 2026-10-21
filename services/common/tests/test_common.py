@@ -66,6 +66,31 @@ def test_ready_answers_fast_when_a_dependency_hangs(monkeypatch):
     assert response.json()["checks"] == {"database": "down"}
 
 
+def test_hanging_checks_run_in_parallel(monkeypatch):
+    """Deux dépendances qui pendent : /ready répond en un seul délai, pas en deux (sinon le watchdog abandonne)."""
+    monkeypatch.setattr("resilience_common.probes.READY_CHECK_TIMEOUT", 0.3)
+    hang = lambda: time.sleep(2)  # noqa: E731
+    app = create_app("test-svc", ready_checks={"database": hang}, info_checks={"auth_jwks": hang})
+    start = time.perf_counter()
+    body = TestClient(app).get("/ready").json()
+    assert time.perf_counter() - start < 0.6
+    assert body["checks"] == {"database": "down"} and body["info"] == {"auth_jwks": "down"}
+
+
+def test_info_checks_are_reported_without_failing_ready():
+    app = create_app(
+        "test-svc",
+        ready_checks={"database": lambda: None},
+        info_checks={"auth_jwks": failing_check},
+        public_prefix="/api/items",
+    )
+    client = TestClient(app)
+    response = client.get("/ready")
+    assert response.status_code == 200
+    assert response.json()["info"] == {"auth_jwks": "down"}
+    assert "info" not in client.get("/api/items/ready").json()  # pas exposé à travers le WAF
+
+
 def test_public_prefix_serves_health_and_ready_but_not_metrics():
     app = create_app("test-svc", public_prefix="/api/items")
 

@@ -14,6 +14,7 @@ def create_app(
     service: str,
     ready_checks: dict[str, ReadyCheck] | None = None,
     public_prefix: str | None = None,
+    info_checks: dict[str, ReadyCheck] | None = None,
     **fastapi_kwargs,
 ) -> FastAPI:
     """Crée une application FastAPI avec logs JSON, trace_id, métriques, sondes et erreurs RFC 9457.
@@ -36,8 +37,9 @@ def create_app(
     app = FastAPI(title=service, **fastapi_kwargs)
     app.add_middleware(ObservabilityMiddleware, service=service)
     register_problem_handlers(app)
-    app.include_router(build_probe_router(service, ready_checks or {}))
+    app.include_router(build_probe_router(service, ready_checks or {}, info_checks))
     if public_prefix:
         # Enregistrées avant les routes métier : /api/payments/ready ne doit pas être pris pour /api/payments/{id}.
+        # Sans info_checks : la sonde publique ne révèle pas nos dépendances internes.
         app.include_router(build_probe_router(service, ready_checks or {}, prefix=public_prefix, with_metrics=False))
     return app
