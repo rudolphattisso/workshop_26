@@ -16,6 +16,13 @@ def test_ready_ok_when_database_reachable():
     assert response.json()["checks"] == {"database": "ok"}
 
 
+def test_ready_is_published_under_the_waf_prefix():
+    # Sonde boîte noire de l'Infra : http://bunkerweb:8080/api/payments/ready (et non /api/payments/{id}).
+    response = TestClient(app).get("/api/payments/ready")
+    assert response.status_code == 200
+    assert response.json()["checks"] == {"database": "ok"}
+
+
 def test_ready_503_when_database_unreachable(monkeypatch):
     # Port fermé : simule une base tombée. Les caches du moteur sont vidés avant et après.
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://nobody:nothing@127.0.0.1:1/none")

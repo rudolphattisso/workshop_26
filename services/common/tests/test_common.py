@@ -66,6 +66,21 @@ def test_ready_answers_fast_when_a_dependency_hangs(monkeypatch):
     assert response.json()["checks"] == {"database": "down"}
 
 
+def test_public_prefix_serves_health_and_ready_but_not_metrics():
+    app = create_app("test-svc", public_prefix="/api/items")
+
+    @app.get("/api/items/{item_id}")
+    def get_item(item_id: int) -> dict:
+        return {"id": item_id}
+
+    client = TestClient(app)
+    # Les sondes sont enregistrées avant les routes métier : « ready » n'est pas pris pour un item_id.
+    assert client.get("/api/items/ready").json()["status"] == "ok"
+    assert client.get("/api/items/health").json()["status"] == "ok"
+    assert client.get("/api/items/metrics").status_code != 200
+    assert client.get("/metrics").status_code == 200  # toujours servi à la racine, sur le réseau interne
+
+
 def test_trace_id_is_generated_and_returned():
     response = make_client().get("/health")
     assert len(response.headers["X-Trace-Id"]) == 32

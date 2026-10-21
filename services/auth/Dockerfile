@@ -28,7 +28,8 @@ EXPOSE 8000
 HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"
 
-# Variables requises (fournies par Vault/SOPS, jamais dans l'image) : DATABASE_URL,
-# DEMO_CLIENT_PASSWORD, SMOKE_CLIENT_PASSWORD, OPERATOR_PASSWORD.
+# Configuration (jamais dans l'image ; secrets en fichiers /run/secrets/*, voir resilience_common/config.py) :
+#   base : DB_HOST, DB_NAME, DB_USER, DB_PASSWORD_FILE (ou DATABASE_URL en local)
+#   mots de passe de démo : DEMO_CLIENT_PASSWORD_FILE, SMOKE_CLIENT_PASSWORD_FILE, OPERATOR_PASSWORD_FILE
 # Optionnelle : JWT_PRIVATE_KEY_FILE (sinon clé de signature éphémère, régénérée à chaque démarrage).
 ENTRYPOINT ["docker-entrypoint.sh"]

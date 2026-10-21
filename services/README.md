@@ -40,9 +40,26 @@ DATABASE_URL=$AUTH_DATABASE_URL ../.venv/Scripts/python -m app.seed
 DATABASE_URL=$AUTH_DATABASE_URL ENABLE_DOCS=true ../.venv/Scripts/python -m uvicorn app.main:app --port 8001
 ```
 
+## Routes publiques et configuration en déploiement
+
+Le WAF (BunkerWeb, Infra) est le seul point d'entrée et transmet l'URI **sans la réécrire** : les routes
+publiques sont donc préfixées `/api/...` (ADR-DEV-0005).
+
+| Public (via le WAF) | Service | Sonde publique |
+|---|---|---|
+| `/api/auth/*` | `auth` | `/api/auth/ready` |
+| `/api/payments*`, `/api/accounts*` | `payment-api` | `/api/payments/ready` |
+| `/api/operations/*` | `payment-api` | — non publié : réseau interne seulement |
+
+`/health`, `/ready` et `/metrics` restent servis à la racine pour Docker et Prometheus (réseau interne).
+
+Secrets : convention `<NOM>_FILE` (fichier `/run/secrets/<nom>` monté par Compose, alimenté par Vault).
+Base : `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD_FILE`. En local, `DATABASE_URL` et les variables
+`<NOM>` de `.env` restent acceptées.
+
 ## auth : jetons
 
-- `POST /auth/login` → jeton RS256 de 15 min. `payment-api` le vérifie avec la clé publique (`AUTH_JWKS_URL`),
+- `POST /api/auth/login` → jeton RS256 de 15 min. `payment-api` le vérifie avec la clé publique (`AUTH_JWKS_URL`),
   gardée en cache : une panne de l'auth n'interrompt pas les paiements en cours.
 - Clé de signature : `JWT_PRIVATE_KEY_FILE` si défini, sinon clé éphémère. **Redémarrer l'auth révoque alors
   tous les jetons** (levier de remédiation en cas de compromission).

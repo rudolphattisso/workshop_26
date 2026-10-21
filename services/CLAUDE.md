@@ -37,7 +37,8 @@ On **consomme** ces briques via les contrats de `contracts/`.
 | Fronts | 2 apps Vite + React + Tailwind (`web`, `dashboard`) servies par Nginx | acté — ADR-DEV-0001 |
 | Temps réel dashboard | Server-Sent Events depuis le moteur de remédiation | acté — ADR-DEV-0001 |
 | Tests | pytest + TestClient (API) · Vitest (React) | acté — ADR-DEV-0001 |
-| Action sur les conteneurs | Docker API via **docker-socket-proxy** (droits restreints) ou playbooks Ansible | **à arbitrer avec Infra/Cyber** |
+| Action sur les conteneurs | docker-proxy de l'Infra : `restart` / `stop` / `start` uniquement (ni create, ni exec) | acté — ADR-DEV-0005 |
+| Intégration plateforme | Routes publiques `/api/...`, secrets `<NOM>_FILE`, cibles = services Compose de l'Infra | acté — ADR-DEV-0005 |
 
 ---
 
@@ -52,7 +53,7 @@ Alerte reçue → DETECTED → DECIDED → ACTING → VERIFYING → RESOLVED
 
 - **Entrée** : alertes conformes à `contracts/alert.schema.json` (sources : ML, Alertmanager, WAF)
 - **Décision** : table « type d'incident → playbook » explicite et versionnée (pas de logique cachée)
-- **Actions possibles** : redémarrer / recréer un conteneur depuis une image saine, bloquer une IP au WAF,
+- **Actions possibles** : redémarrer un conteneur (docker-proxy : restart / stop / start), bloquer une IP au WAF,
   restaurer un état de données, révoquer des tokens — distinguer **disponibilité** et **compromission**
 - **Vérification** : la reprise n'est validée que si `/ready` est OK **et** que le smoke test réussit une transaction
 - **Idempotence + cooldown** : une même alerte ne déclenche pas deux remédiations en boucle
