@@ -40,3 +40,10 @@ def check(probe: TransactionProbe = Depends(get_probe)) -> JSONResponse:
     """Exécute une transaction maintenant : 200 si elle réussit, 503 sinon (même corps JSON)."""
     result = probe.run()
     return JSONResponse(result, status_code=200 if result["ok"] else 503)
+
+
+@app.get("/last", tags=["smoke"])
+def last(probe: TransactionProbe = Depends(get_probe)) -> dict:
+    """Résultat de la dernière transaction de la boucle de fond, sans en déclencher une (lu par le watchdog).
+    `ok: null` tant qu'aucune transaction n'a eu lieu."""
+    return probe.last()

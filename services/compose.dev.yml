@@ -79,6 +79,25 @@ services:
     read_only: true                     # comme dans le Compose de l'Infra
     tmpfs: ["/tmp:size=16m"]
 
+  remediation:
+    profiles: [app]
+    build: { context: ., dockerfile: remediation/Dockerfile }
+    environment:
+      AUTH_JWKS_URL: http://auth:8000/api/auth/.well-known/jwks.json
+      WATCH_WAF_URL: http://gateway:8080
+      WATCH_SMOKE_TEST_URL: http://smoke-test:8000
+      ENABLE_DOCS: "true"
+    ports: ["127.0.0.1:8004:8000"]
+
+  # Dashboard de supervision (connexion : operator) : http://127.0.0.1:8090
+  dashboard:
+    profiles: [app]
+    build: { context: ., dockerfile: dashboard/Dockerfile }
+    read_only: true
+    tmpfs: ["/tmp:size=16m"]
+    depends_on: [auth, remediation]
+    ports: ["127.0.0.1:8090:8080"]
+
   gateway:
     profiles: [app]
     image: nginx:1.27-alpine
