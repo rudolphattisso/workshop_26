@@ -343,4 +343,24 @@ affichait « inconnu » au lieu de « base en panne ». Corrigé : vérification
 - Titre de l'onglet « ⚠ N en panne » ; `role="alert"` pour les lecteurs d'écran
 - Pas de popup pour l'historique d'avant l'ouverture du dashboard, ni de doublon après une reconnexion du flux
 
-**Tests** : 15 Vitest (logique des popups isolée dans `lib/alerts.js`, sans React)
+**Tests** : 16 Vitest (logique des popups isolée dans `lib/alerts.js`, sans React) ; scénario validé dans un vrai
+Chrome piloté par puppeteer-core (panne de la base → popup rouge en ~5 s, retour → popup verte) puis par Rudolph
+
+**Problèmes rencontrés**
+- 5 popups empilées pour une seule panne de base → regroupement en une popup par passage du watchdog
+- Durée d'interruption fausse (« 269 s » au lieu de 5 s) pour un service seulement dégradé : elle partait d'une vieille
+  panne de l'historique. Corrigé : le début est noté dès qu'un élément quitte l'état OK (`trackOutages`)
+
+## Clôture de session — 2026-10-21
+
+**État Git** : `dev/app` = `develop` jusqu'à #16 (watchdog + dashboard) ; PR #18 (popups) ouverte vers `dev/app`.
+`gh` installé et connecté : Claude crée les PR, Rudolph les merge après relecture.
+
+**Reste à faire avant le gel (jeudi 22, 17h)**
+1. Moteur de remédiation : alerte du watchdog → playbook `SERVICE_DOWN` (restart via docker-proxy) → preuve de reprise
+   (`/ready` + `/check` + cohérence) → incidents sur le dashboard
+2. Envoyer à Arman `private/message-arman-infra.md` (restauration automatique, DNS du WAF, intégration de `web`,
+   `remediation`, `dashboard`)
+3. Répéter la démo complète plusieurs fois
+
+**Prochain démarrage** : merger #18, puis brancher le playbook `SERVICE_DOWN` sur le watchdog
