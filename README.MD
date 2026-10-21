@@ -8,13 +8,13 @@ par une **nouvelle transaction réussie**.
 
 ## Équipe — groupe 2
 
-| Membre | Domaine | Dossier |
-|---|---|---|
-| ATTISSO Rudolph | Développement (EISI) | `services/` |
-| BOZZANI Arman | Infrastructure (EISI) | `infra/`, `docker-compose.yml` |
-| TRAN HUU Tri Quentin | IA / Data | `ai/` |
-| GARCIA Robin | Cybersécurité | `security/` |
-| BREMARD Thomas | Cybersécurité | `security/` |
+| Membre | Domaine |
+|---|---|
+| ATTISSO Rudolph | Développement (EISI) |
+| BOZZANI Arman | Infrastructure (EISI) |
+| TRAN HUU Tri Quentin | IA / Data |
+| GARCIA Robin | Cybersécurité |
+| BREMARD Thomas | Cybersécurité |
 
 ## Organisation du dépôt
 
