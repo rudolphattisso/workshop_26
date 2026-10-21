@@ -1,0 +1,106 @@
+# Base PostgreSQL pour le DÉVELOPPEMENT LOCAL et les tests du domaine Dev uniquement.
+# Le déploiement réel (docker-compose.yml racine, sauvegardes) appartient à l'Infra.
+#   docker compose -f services/compose.dev.yml --env-file services/.env up -d
+services:
+  payment-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: payment
+      POSTGRES_USER: payment_api
+      POSTGRES_PASSWORD: ${PAYMENT_DB_PASSWORD:?définir PAYMENT_DB_PASSWORD dans services/.env}
+    ports:
+      - "127.0.0.1:5433:5432" # uniquement en local, jamais sur le réseau
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payment_api -d payment"]
+      interval: 5s
+      retries: 10
+
+  auth-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: auth
+      POSTGRES_USER: auth_service
+      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD:?définir AUTH_DB_PASSWORD dans services/.env}
+    ports:
+      - "127.0.0.1:5434:5432" # uniquement en local, jamais sur le réseau
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auth_service -d auth"]
+      interval: 5s
+      retries: 10
+
+  # ---------------------------------------------------------------------------------------------------
+  # Application complète pour essayer en local (profil « app ») :
+  #   docker compose -f services/compose.dev.yml --env-file services/.env --profile app up -d --build
+  # Application web (via la passerelle qui imite le WAF) : http://127.0.0.1:8080
+  # Swagger : auth http://127.0.0.1:8001/docs · payment-api http://127.0.0.1:8002/docs · smoke-test http://127.0.0.1:8003/docs
+  # ---------------------------------------------------------------------------------------------------
+  auth:
+    profiles: [app]
+    build: { context: ., dockerfile: auth/Dockerfile }
+    environment:
+      DB_HOST: auth-db
+      DB_NAME: auth
+      DB_USER: auth_service
+      DB_PASSWORD: ${AUTH_DB_PASSWORD}
+      DEMO_CLIENT_PASSWORD: ${DEMO_CLIENT_PASSWORD}
+      SMOKE_CLIENT_PASSWORD: ${SMOKE_CLIENT_PASSWORD}
+      OPERATOR_PASSWORD: ${OPERATOR_PASSWORD}
+      ENABLE_DOCS: "true"
+    depends_on: { auth-db: { condition: service_healthy } }
+    ports: ["127.0.0.1:8001:8000"]
+
+  payment-api:
+    profiles: [app]
+    build: { context: ., dockerfile: payment-api/Dockerfile }
+    environment:
+      DB_HOST: payment-db
+      DB_NAME: payment
+      DB_USER: payment_api
+      DB_PASSWORD: ${PAYMENT_DB_PASSWORD}
+      AUTH_JWKS_URL: http://auth:8000/api/auth/.well-known/jwks.json
+      ENABLE_DOCS: "true"
+    depends_on: { payment-db: { condition: service_healthy } }
+    ports: ["127.0.0.1:8002:8000"]
+
+  smoke-test:
+    profiles: [app]
+    build: { context: ., dockerfile: smoke-test/Dockerfile }
+    environment:
+      PROBE_TARGET: http://gateway:8080
+      PROBE_PASSWORD: ${SMOKE_CLIENT_PASSWORD}
+      PROBE_INTERVAL_SECONDS: "15"
+      ENABLE_DOCS: "true"
+    depends_on: [gateway]
+    ports: ["127.0.0.1:8003:8000"]
+
+  web:
+    profiles: [app]
+    build: { context: ., dockerfile: web/Dockerfile }
+    read_only: true                     # comme dans le Compose de l'Infra
+    tmpfs: ["/tmp:size=16m"]
+
+  remediation:
+    profiles: [app]
+    build: { context: ., dockerfile: remediation/Dockerfile }
+    environment:
+      AUTH_JWKS_URL: http://auth:8000/api/auth/.well-known/jwks.json
+      WATCH_WAF_URL: http://gateway:8080
+      WATCH_SMOKE_TEST_URL: http://smoke-test:8000
+      ENABLE_DOCS: "true"
+    ports: ["127.0.0.1:8004:8000"]
+
+  # Dashboard de supervision (connexion : operator) : http://127.0.0.1:8090
+  dashboard:
+    profiles: [app]
+    build: { context: ., dockerfile: dashboard/Dockerfile }
+    read_only: true
+    tmpfs: ["/tmp:size=16m"]
+    depends_on: [auth, remediation]
+    ports: ["127.0.0.1:8090:8080"]
+
+  gateway:
+    profiles: [app]
+    image: nginx:1.27-alpine
+    volumes: ["./dev/gateway.conf:/etc/nginx/conf.d/default.conf:ro"]
+    depends_on: [auth, payment-api, web]
+    ports: ["127.0.0.1:8080:8080"]
