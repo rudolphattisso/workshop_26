@@ -251,3 +251,34 @@ d'infrastructure (WAF, secrets, noms Compose, Alertmanager, docker-proxy) fixent
 - Au merge : retirer ses services provisoires de `services/`, rebaser sur `develop`, résoudre le doublon `README.md` / `README.MD`
 
 **Prochain démarrage** : message à Arman, puis smoke test (remplaçant de `txprobe` : `GET /check`, métrique `synthetic_transaction_success`)
+
+## 2026-10-20 (soir, suite) — Smoke test (`dev/smoke-test`, empilée sur `dev/infra-alignment`)
+
+**Fait**
+- `services/smoke-test` : remplaçant du `txprobe` de l'Infra, même contrat (`GET /check` → `{ok, tx_id, duration_s}`,
+  métriques `synthetic_transaction_*`), donc ses alertes et son dashboard Grafana restent valables
+- Parcours client à travers le WAF : login → `GET /api/accounts` → paiement → relecture ; boucle de fond toutes les 5 s
+  et `/check` à la demande (verrou : jamais deux transactions en même temps) ; `/check` répond 503 en cas d'échec
+- Un trace_id par transaction, envoyé en `X-Trace-Id` et utilisé comme `Idempotency-Key`
+- Nouvelle métrique `synthetic_account_balance_cents` ; `account_id()` déplacé dans `resilience_common.identity`
+
+**Décisions techniques**
+- **1 centime par transaction** au lieu de 1 € : à 1 €, toutes les 5 s, le compte `smoke-client` (1 000 €) était vide en
+  83 min ⇒ échec de la sonde en pleine démo. À 1 centime : ~5,8 jours
+- Connexion à chaque transaction, sans jeton en cache : on prouve que l'auth marche, et une révocation (redémarrage de
+  l'auth) ne fait pas échouer la sonde à tort
+- Pas de contrôle de cohérence dans la sonde : il exige le rôle opérateur ; c'est le moteur qui l'appelle (moindre privilège)
+
+**Tests**
+- 14 tests pytest (fausse plateforme `httpx.MockTransport` : succès, panne réseau, 401, 429, paiement rejeté, relecture
+  incohérente, mot de passe absent des rapports, démarrage refusé sans mot de passe) ; 118 tests au total
+- Intégration Docker derrière un nginx qui imite BunkerWeb : `/check` 200 en ~0,2 s ; même trace_id dans les logs de
+  l'auth, de payment-api et du smoke test ; auth ou payment-api arrêtée ⇒ 503 avec l'étape en cause
+
+**Problème découvert (à remonter à l'Infra)**
+- Un nginx qui résout ses back-ends **une seule fois au démarrage** garde les anciennes adresses IP. En arrêtant puis
+  relançant `auth` et `payment-api`, leurs IP se sont échangées : `/api/auth/login` est parti vers payment-api (404)
+  pendant plus de 30 s, alors que les deux conteneurs étaient « Healthy ». Avec une résolution dynamique
+  (`resolver 127.0.0.11 valid=5s`), reprise en ~7 s. À vérifier sur BunkerWeb ; sinon, IP fixes sur le réseau `app`
+
+**Prochain démarrage** : moteur de remédiation v0 (watchdog + playbook `SERVICE_DOWN` + vérification par `/check`)

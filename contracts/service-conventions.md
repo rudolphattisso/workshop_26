@@ -112,6 +112,8 @@ variable `<NOM>` est acceptée (`services/.env`). Implémentation : `resilience_
 | `auth` | `DEMO_CLIENT_PASSWORD_FILE`, `SMOKE_CLIENT_PASSWORD_FILE`, `OPERATOR_PASSWORD_FILE` | `/run/secrets/demo_user_password`, `/run/secrets/probe_user_password`, `/run/secrets/operator_password` |
 | `auth` | `JWT_PRIVATE_KEY_FILE` (facultatif) | absent ⇒ clé éphémère, régénérée à chaque redémarrage |
 | `payment-api` | `AUTH_JWKS_URL` (pas un secret) | `http://auth:8000/api/auth/.well-known/jwks.json` |
+| `smoke-test` | `PROBE_PASSWORD_FILE` | `/run/secrets/probe_user_password` (même secret que `SMOKE_CLIENT_PASSWORD_FILE` de l'auth) |
+| `smoke-test` | `PROBE_TARGET`, `PROBE_INTERVAL_SECONDS` (pas des secrets) | `http://bunkerweb:8080` (à travers le WAF), `5` |
 
 `DATABASE_URL`, s'il est défini, remplace `DB_*` (développement local et tests).
 

@@ -214,7 +214,7 @@ paths:
       tags: [operations]
       summary: Vérifier la cohérence des données (rôle operator)
       description: |
-        Preuve de « données cohérentes » après remédiation, utilisée par le smoke test et le dashboard :
+        Preuve de « données cohérentes » après remédiation, utilisée par le moteur de remédiation et le dashboard :
         - la somme des soldes est égale au total d'ouverture (les paiements ne créent ni ne détruisent d'argent) ;
         - le solde de chaque compte est égal à la somme de ses écritures au grand livre (détecte une modification
           directe de la base) ;

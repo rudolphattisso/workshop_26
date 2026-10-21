@@ -8,6 +8,7 @@ Microservices Python/FastAPI et interfaces React de RESILIENCE-ALPHA. Les choix 
 | `common/` | Socle partagé : logs JSON, trace_id, `/health` `/ready` `/metrics`, erreurs RFC 9457, vérification JWT |
 | `auth/` | Connexion, jetons RS256, JWKS (`contracts/openapi-payment.yaml`, tag auth ; ADR-DEV-0003) |
 | `payment-api/` | Comptes et paiements fictifs (`contracts/openapi-payment.yaml`) |
+| `smoke-test/` | Transaction de bout en bout à travers le WAF, toutes les 5 s et sur `GET /check` (service Compose `txprobe`) |
 
 ## Développer en local (Windows, Git Bash)
 
@@ -64,6 +65,17 @@ Base : `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD_FILE`. En local, `DATABASE_
 - Clé de signature : `JWT_PRIVATE_KEY_FILE` si défini, sinon clé éphémère. **Redémarrer l'auth révoque alors
   tous les jetons** (levier de remédiation en cas de compromission).
 - Utilisateurs de démo : `alice`, `bob`, `cafe-demo` (clients), `smoke-client` (smoke test), `operator`.
+
+## smoke-test : preuve de reprise
+
+- Parcours d'un vrai client, **à travers le WAF** : login `smoke-client` → `GET /api/accounts` → paiement de
+  **1 centime** → relecture. 1 centime : le compte tient ~5,8 jours à une transaction toutes les 5 s (à 1 €, 83 min).
+- `GET /check` : une transaction à la demande, `200 {ok: true, tx_id, duration_s, trace_id}` ou
+  `503 {ok: false, step, error, …}`. Utilisé par le moteur de remédiation. **Réseau interne seulement** (vrai paiement).
+- Métriques reprises du `txprobe` de l'Infra : `synthetic_transaction_success`, `_duration_seconds`,
+  `_last_success_timestamp`, `synthetic_transactions_total{result,step}`, plus `synthetic_account_balance_cents`.
+- Un trace_id par transaction (en-tête `X-Trace-Id`, aussi utilisé comme `Idempotency-Key`) : la transaction se
+  suit dans les logs de tous les services.
 
 ## payment-api : données
 

@@ -20,7 +20,10 @@ info:
       Le moteur décide seul à partir de la table des playbooks (`GET /playbooks`), explicite et versionnée.
     - **Preuve de reprise** : un incident n'est `RESOLVED` que si les trois vérifications réussissent :
       1. `/ready` de `payment-api` et `auth` répond 200 ;
-      2. le smoke test réussit une **nouvelle transaction fictive** (login `smoke-client` → paiement de 1 €) ;
+      2. le smoke test réussit une **nouvelle transaction fictive** à travers le WAF : login `smoke-client` →
+         lecture des comptes → paiement de 0,01 € → relecture. Appel : `GET http://txprobe:8000/check` (service
+         Compose `txprobe`, code `services/smoke-test`), réponse `200 {ok: true, tx_id, duration_s, trace_id}` ou
+         `503 {ok: false, step, error, duration_s, trace_id}`. Un appel peut durer jusqu'à ~20 s (4 étapes × 5 s) ;
       3. `GET /api/operations/consistency` de payment-api (réseau interne) renvoie `consistent: true`.
     - **Déduplication** : une alerte déjà reçue (même `alert_id`), ou une alerte de même `incident_type` et
       même `target` qu'un incident ouvert ou résolu depuis moins de 120 s, est **rattachée** à cet incident.
