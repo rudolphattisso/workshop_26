@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { dropRecovered, groupAlerts, takeNewChanges, toAlert } from "../lib/alerts.js";
+import { dropRecovered, groupAlerts, takeNewChanges, toAlert, trackOutages } from "../lib/alerts.js";
 import { readEvents, Unauthorized } from "../lib/sse.js";
 import { OVERALL_TEXT, overall, styleOf } from "../lib/status.js";
 import AlertPopups from "./AlertPopups.jsx";
@@ -20,7 +20,7 @@ export default function Supervision({ token, onSignOut }) {
   const [alerts, setAlerts] = useState([]);
   const seen = useRef(new Set()); // changements déjà traités (pas de doublon après une reconnexion)
   const firstLoad = useRef(true);
-  const downSince = useRef({}); // id → début de la panne, pour annoncer la durée de l'interruption
+  const outageSince = useRef({}); // id → début de l'interruption en cours, pour annoncer sa durée au retour
 
   const closeAlert = useCallback((id) => setAlerts((current) => current.filter((a) => a.id !== id)), []);
 
@@ -28,17 +28,17 @@ export default function Supervision({ token, onSignOut }) {
   const notify = useCallback((changes) => {
     const fresh = takeNewChanges(changes, seen.current, firstLoad.current);
     if (firstLoad.current) {
-      // Historique d'avant l'ouverture : pas de popup, mais on retient les débuts de panne pour la durée.
-      [...changes].reverse().forEach((c) => c.to === "down" && (downSince.current[c.id] = c.at));
+      // Historique d'avant l'ouverture : pas de popup, mais on retient les interruptions en cours pour la durée.
+      trackOutages([...changes].reverse(), outageSince.current);
       firstLoad.current = false;
     }
     if (!fresh.length) return;
     const created = [];
     const recovered = new Set();
     for (const change of fresh) {
-      if (change.to === "down") downSince.current[change.id] = change.at;
+      const alert = toAlert(change, outageSince.current); // avant trackOutages : le début est encore connu
+      trackOutages([change], outageSince.current);
       if (change.to !== "down") recovered.add(change.id); // plus en panne : retiré de la popup de panne
-      const alert = toAlert(change, downSince.current);
       if (alert) created.push(alert);
     }
     const popups = groupAlerts(created).reverse(); // la plus récente en haut

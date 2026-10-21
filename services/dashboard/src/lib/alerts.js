@@ -51,6 +51,17 @@ export function toAlert(change, downSince) {
 }
 
 /**
+ * Mémorise le début de chaque interruption, du plus ancien au plus récent : dès qu'un élément quitte « up »
+ * (panne, dégradé ou plus mesurable), jusqu'à son retour à « up ». Sert à annoncer la durée au retour.
+ */
+export function trackOutages(changes, since) {
+  for (const change of changes) {
+    if (change.to === "up") delete since[change.id];
+    else if (change.from === "up" || !(change.id in since)) since[change.id] = change.at;
+  }
+}
+
+/**
  * Une seule popup par passage du watchdog et par niveau : une panne de base change 5 éléments à la fois
  * (base, API, deux connexions, transaction), l'opérateur doit voir un incident, pas 5 popups.
  */

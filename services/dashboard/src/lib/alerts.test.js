@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dropRecovered, groupAlerts, takeNewChanges, toAlert } from "./alerts.js";
+import { dropRecovered, groupAlerts, takeNewChanges, toAlert, trackOutages } from "./alerts.js";
 
 const change = (id, from, to, at = "2026-10-22T10:00:00+00:00") => ({
   at,
@@ -68,5 +68,24 @@ describe("groupAlerts / dropRecovered", () => {
     expect(popups[0].items.map((i) => i.target)).toEqual(["payment-api->payment-db", "smoke-test->bunkerweb"]);
     popups = dropRecovered(popups, new Set(["payment-api->payment-db", "smoke-test->bunkerweb"]));
     expect(popups).toEqual([]);
+  });
+});
+
+describe("trackOutages", () => {
+  it("compte l'interruption depuis la sortie de l'état OK, même dégradé, pas depuis une vieille panne", () => {
+    const since = {};
+    trackOutages(
+      [
+        change("payment-api", "up", "down", "2026-10-22T09:55:00+00:00"), // panne au démarrage, il y a longtemps
+        change("payment-api", "down", "up", "2026-10-22T09:55:10+00:00"),
+      ],
+      since,
+    );
+    trackOutages([change("payment-api", "up", "degraded", "2026-10-22T10:00:00+00:00")], since);
+    trackOutages([change("payment-api", "degraded", "down", "2026-10-22T10:00:03+00:00")], since); // aggravation
+    const back = change("payment-api", "down", "up", "2026-10-22T10:00:07+00:00");
+    expect(toAlert(back, since).detail).toBe("Interruption de 7 s");
+    trackOutages([back], since);
+    expect(since).toEqual({});
   });
 });
