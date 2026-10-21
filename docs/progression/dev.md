@@ -353,8 +353,10 @@ Chrome piloté par puppeteer-core (panne de la base → popup rouge en ~5 s, ret
 
 ## Clôture de session — 2026-10-21
 
-**État Git** : `dev/app` = `develop` jusqu'à #16 (watchdog + dashboard) ; PR #18 (popups) ouverte vers `dev/app`.
-`gh` installé et connecté : Claude crée les PR, Rudolph les merge après relecture.
+**État Git** : #16 (watchdog + dashboard) et #18 (popups) mergées dans `dev/app` ; `develop` à jour jusqu'à #16
+(#18 reste à remonter `dev/app` → `develop`). Branches de travail intégrées supprimées (local + GitHub) : il reste
+`main`, `develop`, `dev/app` et `infrastructure` (Arman). `gh` installé et connecté : Claude crée les PR, Rudolph
+les merge après relecture.
 
 **Reste à faire avant le gel (jeudi 22, 17h)**
 1. Moteur de remédiation : alerte du watchdog → playbook `SERVICE_DOWN` (restart via docker-proxy) → preuve de reprise
@@ -363,4 +365,4 @@ Chrome piloté par puppeteer-core (panne de la base → popup rouge en ~5 s, ret
    `remediation`, `dashboard`)
 3. Répéter la démo complète plusieurs fois
 
-**Prochain démarrage** : merger #18, puis brancher le playbook `SERVICE_DOWN` sur le watchdog
+**Prochain démarrage** : remonter `dev/app` → `develop` (popups), puis brancher le playbook `SERVICE_DOWN` sur le watchdog
