@@ -1,0 +1,32 @@
+# Contrôles préalables : on échoue tôt et clairement plutôt qu'au milieu d'un déploiement.
+- name: "Préflight | Docker Engine joignable"
+  ansible.builtin.command: docker info --format json
+  register: docker_info
+  changed_when: false
+
+- name: "Préflight | Ressources allouées à Docker"
+  ansible.builtin.set_fact:
+    docker_version: "{{ (docker_info.stdout | from_json).ServerVersion }}"
+    docker_mem_gb: "{{ ((docker_info.stdout | from_json).MemTotal | int / 1024 / 1024 / 1024) | round(1) }}"
+    docker_cpus: "{{ (docker_info.stdout | from_json).NCPU }}"
+
+- name: "Préflight | Avertir si la mémoire Docker est faible"
+  ansible.builtin.debug:
+    msg: "ATTENTION : {{ docker_mem_gb }} Go alloués à Docker (4 Go minimum conseillés pour la stack)."
+  when: docker_mem_gb | float < 4
+
+- name: "Préflight | Docker Compose v2 disponible"
+  ansible.builtin.command: docker compose version --short
+  register: compose_version
+  changed_when: false
+
+- name: "Préflight | Fichier .env présent (créé depuis .env.example sinon)"
+  ansible.builtin.copy:
+    src: "{{ project_dir }}/.env.example"
+    dest: "{{ project_dir }}/.env"
+    force: false
+    mode: "0644"
+
+- name: "Préflight | Résumé"
+  ansible.builtin.debug:
+    msg: "Docker {{ docker_version }} | Compose {{ compose_version.stdout }} | {{ docker_cpus }} CPU | {{ docker_mem_gb }} Go"

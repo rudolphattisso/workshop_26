@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AlphaPay — démonstrateur</title>
+<style>
+  body{font-family:system-ui,sans-serif;max-width:640px;margin:2rem auto;padding:0 16px;background:#f6f7f9;color:#1d2330}
+  .card{background:#fff;border-radius:10px;padding:1.25rem;margin-bottom:1rem;box-shadow:0 1px 3px #0001}
+  input,button{font:inherit;padding:.5rem;margin:.25rem 0;width:100%;box-sizing:border-box}
+  button{background:#1f5eff;color:#fff;border:0;border-radius:6px;cursor:pointer}
+  pre{background:#11151c;color:#cde;padding:.75rem;border-radius:6px;overflow:auto;font-size:.85rem}
+  .note{font-size:.85rem;color:#667}
+</style>
+</head>
+<body>
+<h1>AlphaPay</h1>
+<p class="note">Frontal de référence (fourni par l'équipe infra pour tester la chaîne) — à remplacer par le dashboard React/Tailwind. Données 100 % fictives.</p>
+<div class="card">
+  <h2>Connexion</h2>
+  <input id="u" placeholder="utilisateur" value="alice">
+  <input id="p" placeholder="mot de passe" type="password">
+  <button onclick="login()">Se connecter</button>
+</div>
+<div class="card">
+  <h2>Nouveau paiement</h2>
+  <input id="amount" placeholder="montant" value="42.00">
+  <input id="merchant" placeholder="marchand" value="CAFE-DU-CAMPUS">
+  <button onclick="pay()">Payer</button>
+</div>
+<pre id="out">—</pre>
+<script>
+let token = null;
+const out = (x) => document.getElementById('out').textContent = typeof x === 'string' ? x : JSON.stringify(x, null, 2);
+async function call(path, opts = {}) {
+  const r = await fetch('/api' + path, {...opts, headers: {'content-type': 'application/json', ...(token ? {authorization: 'Bearer ' + token} : {}), ...(opts.headers || {})}});
+  const body = await r.text();
+  try { return {status: r.status, body: JSON.parse(body)}; } catch { return {status: r.status, body}; }
+}
+async function login() {
+  const r = await call('/auth/login', {method: 'POST', body: JSON.stringify({username: u.value, password: p.value})});
+  if (r.status === 200) token = r.body.access_token;
+  out(r);
+}
+async function pay() {
+  out(await call('/payments', {method: 'POST', body: JSON.stringify({amount: amount.value, currency: 'EUR', merchant: merchant.value})}));
+}
+</script>
+</body>
+</html>

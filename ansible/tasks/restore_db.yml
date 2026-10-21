@@ -1,0 +1,28 @@
+# Restauration d'un dump : sélection (dernier par défaut), contrôle d'intégrité, restauration.
+- name: "Restauration | Choix du fichier"
+  ansible.builtin.shell: cd "{{ backup_dir }}" && ls -1t payments-*.dump | head -n 1
+  register: latest_dump
+  changed_when: false
+  when: restore_file is not defined
+
+- name: "Restauration | Fichier retenu"
+  ansible.builtin.set_fact:
+    restore_path: "{{ backup_dir }}/{{ restore_file | default(latest_dump.stdout) | basename }}"
+
+- name: "Restauration | Vérification de l'empreinte SHA-256"
+  ansible.builtin.shell: cd "{{ backup_dir }}" && sha256sum -c "$(basename '{{ restore_path }}').sha256"
+  changed_when: false
+
+- name: "Restauration | Arrêt des services qui écrivent en base"
+  ansible.builtin.command: "{{ compose }} stop auth payment-api txprobe"
+  changed_when: true
+
+- name: "Restauration | pg_restore (transaction unique, objets recréés)"
+  ansible.builtin.shell: >-
+    {{ compose }} exec -T postgres pg_restore -U payments_admin -d payments
+    --clean --if-exists --single-transaction --exit-on-error < "{{ restore_path }}"
+  changed_when: true
+
+- name: "Restauration | Redémarrage des services"
+  ansible.builtin.command: "{{ compose }} up -d --wait auth payment-api txprobe"
+  changed_when: true

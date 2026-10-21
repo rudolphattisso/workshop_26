@@ -1,0 +1,71 @@
+# « docker compose up » robuste aux ports Windows réservés dynamiquement.
+#
+# Windows (Hyper-V/WSL) réserve des plages de ports éphémères qui changent À CHAQUE REDÉMARRAGE
+# de Docker Desktop. Un port d'administration fixé dans .env (ex. Vault sur 18200) peut donc se
+# retrouver dans une plage réservée après un redémarrage, et Docker refuse alors de le publier
+# (« ports are not available ... bind: Une tentative d'accès à un socket... »). Constaté deux fois
+# en conditions réelles avec des ports différents : ce n'est pas un cas limite.
+#
+# Cette tâche détecte l'échec, identifie LE port en cause et SA variable .env via `port_env_map`,
+# le remplace par un port libre (incrément de 11, pour rester loin des plages dynamiques déjà
+# vues), réécrit .env, et retente — jusqu'à `compose_up_retries` fois.
+#
+# Variables attendues en entrée :
+#   compose_up_args   : arguments après « up » (ex. "-d --wait --wait-timeout 180 vault vault-unsealer")
+#   port_env_map      : dict {port_actuel: NOM_VARIABLE_ENV} pour les ports publiés par CETTE commande
+#   compose_up_retries (défaut 5)
+- name: "Compose up résilient | Tentative"
+  ansible.builtin.command: "{{ compose }} up {{ compose_up_args }}"
+  register: cur_up
+  changed_when: "'Started' in cur_up.stderr or 'Created' in cur_up.stderr or 'Recreated' in cur_up.stderr"
+  failed_when: false
+
+- name: "Compose up résilient | Port Windows en conflit ?"
+  ansible.builtin.set_fact:
+    port_conflict: "{{ cur_up.rc != 0 and 'ports are not available' in (cur_up.stderr | default('')) }}"
+
+- name: "Compose up résilient | Identifier le port fautif et sa variable .env"
+  # Le message d'erreur Docker répète le même port deux fois (« exposing port » puis « listen tcp4 »)
+  # : le premier suffit.
+  ansible.builtin.set_fact:
+    conflict_port: "{{ (cur_up.stderr | regex_search('listen tcp[46]? 127\\.0\\.0\\.1:(\\d+)', '\\1'))[0] }}"
+  when: port_conflict | bool
+
+- name: "Compose up résilient | Échec non lié à un port (on relaie l'erreur)"
+  ansible.builtin.fail:
+    msg: "{{ cur_up.stderr }}"
+  when: cur_up.rc != 0 and not (port_conflict | bool)
+
+- name: "Compose up résilient | Variable .env correspondant au port fautif"
+  ansible.builtin.set_fact:
+    conflict_env_var: "{{ port_env_map.get(conflict_port | string) }}"
+  when: port_conflict | bool
+
+- name: "Compose up résilient | Port inconnu de port_env_map (on relaie l'erreur)"
+  ansible.builtin.fail:
+    msg: >-
+      Port {{ conflict_port }} refusé par Windows (plage réservée dynamique) mais absent de
+      port_env_map : impossible de choisir un nouveau port automatiquement. Erreur d'origine :
+      {{ cur_up.stderr }}
+  when: (port_conflict | bool) and (conflict_env_var | default('') | length == 0)
+
+- name: "Compose up résilient | Nouveau port libre et mise à jour de .env"
+  when: (port_conflict | bool) and (conflict_env_var | default('') | length > 0)
+  block:
+    - ansible.builtin.set_fact:
+        new_port: "{{ (conflict_port | int + 997) % 55000 + 10000 }}"
+    - name: "Compose up résilient | {{ conflict_env_var | default('?') }} : {{ conflict_port | default('?') }} -> {{ new_port | default('?') }} (conflit Windows)"
+      ansible.builtin.lineinfile:
+        path: "{{ project_dir }}/.env"
+        regexp: "^{{ conflict_env_var }}="
+        line: "{{ conflict_env_var }}={{ new_port }}"
+    - ansible.builtin.set_fact:
+        compose_up_retries: "{{ (compose_up_retries | default(8) | int) - 1 }}"
+    - name: "Compose up résilient | Nouvelle tentative avec le port libre"
+      ansible.builtin.include_tasks: compose_up_resilient.yml
+      when: compose_up_retries | int > 0
+
+- name: "Compose up résilient | Échec persistant après épuisement des tentatives"
+  ansible.builtin.fail:
+    msg: "Impossible de trouver un port libre pour {{ conflict_env_var | default('?') }} après plusieurs essais."
+  when: (port_conflict | bool) and (conflict_env_var | default('') | length > 0) and (compose_up_retries | default(0) | int) <= 0

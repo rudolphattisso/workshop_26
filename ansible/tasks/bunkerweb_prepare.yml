@@ -1,0 +1,27 @@
+# Secrets propres à BunkerWeb, générés ALÉATOIREMENT dans .env (non versionné) s'ils sont absents :
+#   BW_API_TOKEN : jeton de l'API interne scheduler <-> instance <-> console
+#   BW_UI_PASSWORD : mot de passe de la console web (politique : majuscule, minuscule, chiffre, spécial)
+- name: "BunkerWeb | Générer le jeton d'API interne (si absent)"
+  ansible.builtin.lineinfile:
+    path: "{{ project_dir }}/.env"
+    line: "BW_API_TOKEN={{ lookup('ansible.builtin.password', '/dev/null', length=40, chars=['ascii_letters', 'digits']) }}"
+    regexp: "^BW_API_TOKEN=(?!changeme)."
+    create: true
+    mode: "0600"
+  no_log: true
+
+- name: "BunkerWeb | Mot de passe de la console déjà présent ?"
+  ansible.builtin.command: grep -q '^BW_UI_PASSWORD=.' "{{ project_dir }}/.env"
+  register: bw_ui_pw
+  failed_when: false
+  changed_when: false
+
+- name: "BunkerWeb | Générer le mot de passe de la console (si absent)"
+  ansible.builtin.lineinfile:
+    path: "{{ project_dir }}/.env"
+    line: "BW_UI_PASSWORD={{ lookup('ansible.builtin.password', '/dev/null', length=20, chars=['ascii_letters', 'digits']) }}-Aa1!"
+    regexp: "^BW_UI_PASSWORD="
+    create: true
+    mode: "0600"
+  when: bw_ui_pw.rc != 0
+  no_log: true

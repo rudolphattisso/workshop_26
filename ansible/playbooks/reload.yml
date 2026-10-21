@@ -1,0 +1,23 @@
+# Recharge à chaud des configurations d'observabilité après modification (sans coupure).
+#   scripts/ops.ps1 reload
+- name: Recharger les configurations
+  hosts: pc-hote
+  gather_facts: false
+  tasks:
+    - ansible.builtin.import_tasks: ../tasks/attach_controller.yml
+    - ansible.builtin.import_tasks: ../tasks/vars_urls.yml
+    - name: "Reload | Valider puis recharger Prometheus"
+      ansible.builtin.command: >-
+        docker run --rm -v {{ project_dir }}/infra/prometheus:/etc/prometheus:ro
+        --entrypoint promtool prom/prometheus:v3.5.0 check config /etc/prometheus/prometheus.yml
+      changed_when: false
+    - ansible.builtin.uri: { url: "{{ prom_url }}/-/reload", method: POST }
+    - name: "Reload | Valider puis recharger Alertmanager"
+      ansible.builtin.command: >-
+        docker run --rm -v {{ project_dir }}/infra/alertmanager:/etc/alertmanager:ro
+        --entrypoint amtool prom/alertmanager:v0.28.1 check-config /etc/alertmanager/alertmanager.yml
+      changed_when: false
+    - ansible.builtin.uri: { url: "{{ am_url }}/-/reload", method: POST }
+    - name: "Reload | Loki, Alloy, Grafana, WAF : redémarrage ciblé"
+      ansible.builtin.command: "{{ compose }} restart loki alloy grafana bunkerweb bunkerweb-scheduler"
+      changed_when: true

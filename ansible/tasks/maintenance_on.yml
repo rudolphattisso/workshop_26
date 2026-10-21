@@ -1,0 +1,23 @@
+# Mode maintenance : silence Alertmanager sur les services métier pendant une opération
+# planifiée (restauration, reconstruction), pour que le moteur de remédiation ne
+# « répare » pas ce qu'Ansible arrête volontairement.
+- ansible.builtin.import_tasks: vars_urls.yml
+
+- name: "Maintenance | Créer un silence Alertmanager"
+  ansible.builtin.uri:
+    url: "{{ am_url }}/api/v2/silences"
+    method: POST
+    body_format: json
+    body:
+      matchers:
+        - { name: severity, value: ".+", isRegex: true, isEqual: true }
+      startsAt: "{{ '%Y-%m-%dT%H:%M:%SZ' | strftime(now().timestamp() | int, utc=true) }}"
+      endsAt: "{{ '%Y-%m-%dT%H:%M:%SZ' | strftime((now().timestamp() + (maintenance_minutes | default(20) | int) * 60) | int, utc=true) }}"
+      createdBy: ansible
+      comment: "{{ maintenance_reason | default('Opération planifiée Ansible') }}"
+  register: silence
+  failed_when: false
+
+- name: "Maintenance | Silence actif"
+  ansible.builtin.set_fact:
+    silence_id: "{{ silence.json.silenceID | default('') }}"

@@ -1,0 +1,10 @@
+# Arrêt de la plateforme.
+#   scripts/ops.ps1 teardown                    -> arrêt, données conservées
+#   scripts/ops.ps1 teardown -e purge=true      -> supprime AUSSI les volumes (base, métriques, logs)
+- name: Arrêter la plateforme
+  hosts: pc-hote
+  gather_facts: false
+  tasks:
+    - name: "Arrêt | docker compose down"
+      ansible.builtin.command: "{{ compose }} down --remove-orphans {{ '--volumes' if (purge | default(false) | bool) else '' }}"
+      changed_when: true

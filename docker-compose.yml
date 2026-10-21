@@ -1,0 +1,656 @@
+# =============================================================================
+#  PROJECT RESILIENCE-ALPHA — définition de la plateforme (Docker Compose)
+#
+#  Compose = « QUOI tourne et COMMENT c'est relié » (état désiré des conteneurs).
+#  Ansible  = « COMMENT on l'opère » (installation, secrets, contrôles, sauvegarde,
+#             restauration, PRA) — voir ansible/ et docs/INFRA.md.
+#
+#  Lancement normal : scripts/ops.ps1 deploy   (ou ./scripts/ops.sh deploy)
+#  Les paramètres modifiables sont dans .env (copie de .env.example).
+# =============================================================================
+name: ${COMPOSE_PROJECT_NAME:-resilience}
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+x-hardening: &hardening
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+  logging: *logging
+  restart: unless-stopped
+
+x-python-service: &python-service
+  <<: *hardening
+  read_only: true
+  tmpfs: ["/tmp:size=16m"]
+
+# -----------------------------------------------------------------------------
+# Réseaux : segmentation par rôle. "internal: true" = aucune sortie vers l'extérieur
+# (limite l'exfiltration et les téléchargements d'outils en cas de compromission).
+# -----------------------------------------------------------------------------
+networks:
+  edge:         # seul réseau exposé au LAN (hotspot) : uniquement le WAF
+    ipam: { config: [{ subnet: 172.30.10.0/24 }] }
+  app:          # WAF <-> frontal / auth / API
+    internal: true
+    ipam: { config: [{ subnet: 172.30.20.0/24 }] }
+  data:         # services métier <-> PostgreSQL
+    internal: true
+    ipam: { config: [{ subnet: 172.30.30.0/24 }] }
+  monitoring:   # collecte des métriques et journaux
+    internal: true
+    ipam: { config: [{ subnet: 172.30.40.0/24 }] }
+  control:      # moteur de remédiation <-> proxy Docker (droits restreints)
+    internal: true
+    ipam: { config: [{ subnet: 172.30.50.0/24 }] }
+  dockerapi-ro: # Alloy <-> proxy Docker en lecture seule
+    internal: true
+    ipam: { config: [{ subnet: 172.30.60.0/24 }] }
+  mgmt:         # interfaces d'admin publiées sur 127.0.0.1 uniquement
+    ipam: { config: [{ subnet: 172.30.70.0/24 }] }
+  bw-universe:  # plan de contrôle BunkerWeb : scheduler <-> instance (API interne)
+    internal: true
+    ipam: { config: [{ subnet: 172.30.80.0/24 }] }
+  vault:        # HashiCorp Vault <-> sidecar de descellement
+    internal: true
+    ipam: { config: [{ subnet: 172.30.100.0/24 }] }
+  siem:         # Wazuh : agent -> manager (1514/1515) ; alertes du manager -> Alloy (syslog UDP 5514)
+    internal: true
+    ipam: { config: [{ subnet: 172.30.90.0/24 }] }
+
+volumes:
+  pgdata:
+  prometheus-data:
+  alertmanager-data:
+  loki-data:
+  grafana-data:
+  alloy-data:
+  bw-data:
+  bw-ui-data:
+  wazuh_api_configuration:
+  wazuh_etc:
+  wazuh_logs:
+  wazuh_queue:
+  wazuh_var_multigroups:
+  wazuh_integrations:
+  wazuh_active_response:
+  wazuh_agentless:
+  wazuh_wodles:
+  agent-logs:
+  vault-data:
+  vault-keys:
+
+# -----------------------------------------------------------------------------
+# Secrets : fichiers générés localement par Ansible (playbook secrets.yml) dans
+# ./secrets/ — jamais versionnés. Montés en lecture seule dans /run/secrets/.
+# -----------------------------------------------------------------------------
+secrets:
+  postgres_password:      { file: ./secrets/postgres_password }
+  payment_db_password:    { file: ./secrets/payment_db_password }
+  auth_db_password:       { file: ./secrets/auth_db_password }
+  exporter_db_password:   { file: ./secrets/exporter_db_password }
+  jwt_secret:             { file: ./secrets/jwt_secret }
+  demo_user_password:     { file: ./secrets/demo_user_password }
+  probe_user_password:    { file: ./secrets/probe_user_password }
+  remediation_token:      { file: ./secrets/remediation_token }
+  grafana_admin_password: { file: ./secrets/grafana_admin_password }
+
+services:
+  # ===========================================================================
+  #  SI DE PAIEMENT
+  # ===========================================================================
+  # WAF = BunkerWeb (nginx + ModSecurity + OWASP CRS + bad-behavior auto-ban + rate-limit).
+  # Point d'entrée UNIQUE. Deux conteneurs :
+  #   - bunkerweb          : plan de données (reçoit le trafic, applique les règles)
+  #   - bunkerweb-scheduler: plan de contrôle (porte TOUS les réglages, génère la conf,
+  #                          télécharge/maj l'OWASP CRS, pousse vers l'instance via l'API)
+  bunkerweb:
+    <<: *hardening
+    image: ${WAF_IMAGE:-bunkerity/bunkerweb:1.6.16}
+    ports:
+      - "${PUBLIC_BIND_ADDR:-0.0.0.0}:${PUBLIC_HTTP_PORT:-80}:8080"
+      - "${PUBLIC_BIND_ADDR:-0.0.0.0}:${PUBLIC_HTTPS_PORT:-443}:8443"
+    environment:
+      AUTOCONF_MODE: "no"
+      API_WHITELIST_IP: "127.0.0.0/8 172.30.80.0/24"   # API interne : réseau bw-universe seulement
+      API_TOKEN: ${BW_API_TOKEN:?défini par ops deploy dans .env}
+    networks: [edge, app, monitoring, bw-universe]
+    depends_on: [frontend]
+    labels: { resilience.tier: edge }
+    deploy: { resources: { limits: { memory: 384m, cpus: "1.0" } } }
+
+  # Redis : stocke les rapports de blocage (« Reports ») et les bans partagés entre le WAF et la
+  # console. Sans lui, la console BunkerWeb n'affiche aucune alerte. Réseau interne uniquement.
+  bw-redis:
+    <<: *hardening
+    image: redis:7-alpine
+    user: "999:999"                 # redis : évite le chown de l'entrypoint (interdit avec cap_drop ALL)
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "48mb", "--maxmemory-policy", "allkeys-lru"]
+    read_only: true
+    tmpfs: ["/data:size=8m"]
+    networks: [bw-universe]
+    labels: { resilience.tier: edge }
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy: { resources: { limits: { memory: 64m, cpus: "0.25" } } }
+
+  bunkerweb-scheduler:
+    image: ${WAF_SCHEDULER_IMAGE:-bunkerity/bunkerweb-scheduler:1.6.16}
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      BUNKERWEB_INSTANCES: "bunkerweb"
+      API_TOKEN: ${BW_API_TOKEN:?défini par ops deploy dans .env}
+      DATABASE_URI: "sqlite:////data/db.sqlite3"   # partagée avec la console (bunkerweb-ui)
+      # Accès : liste des noms d'hôte acceptés (ajouter l'IP du hotspot pour la démo via .env)
+      SERVER_NAME: ${PUBLIC_SERVER_NAME:-localhost 127.0.0.1 bunkerweb}
+      MULTISITE: "no"
+      USE_REDIS: "yes"
+      REDIS_HOST: "bw-redis"
+      USE_REAL_IP: "no"
+      MAX_CLIENT_SIZE: "256k"
+      LOG_LEVEL: "notice"
+      # --- Reverse proxy : routage vers les microservices (/api/* -> back-ends) ---
+      # Hôtes sans chemin -> nginx transmet l'URI d'origine telle quelle au back-end
+      # (les services exposent leurs routes publiques sous /api/auth et /api/payments).
+      USE_REVERSE_PROXY: "yes"
+      REVERSE_PROXY_URL: "/"
+      REVERSE_PROXY_HOST: "http://frontend:8080"
+      REVERSE_PROXY_URL_1: "/api/auth"
+      REVERSE_PROXY_HOST_1: "http://auth:8000"
+      REVERSE_PROXY_URL_2: "/api/payments"
+      REVERSE_PROXY_HOST_2: "http://payment-api:8000"
+      # --- WAF : ModSecurity + OWASP CRS v4 (bloque XSS, SQLi...) ---
+      USE_MODSECURITY: "yes"
+      USE_MODSECURITY_CRS: "yes"
+      MODSECURITY_CRS_VERSION: "4"
+      MODSECURITY_SEC_RULE_ENGINE: ${WAF_RULE_ENGINE:-On}   # On = bloque / DetectionOnly = journalise (démo avant/après)
+      # --- Anti-DoS : limitation de débit + bannissement automatique des IP "bad behavior" ---
+      USE_LIMIT_REQ: "yes"
+      LIMIT_REQ_URL: "/"
+      LIMIT_REQ_RATE: ${WAF_API_RATE:-20r/s}
+      LIMIT_REQ_URL_1: "= /api/auth/login"
+      LIMIT_REQ_RATE_1: ${WAF_LOGIN_RATE:-5r/s}
+      USE_BAD_BEHAVIOR: "yes"
+      BAD_BEHAVIOR_STATUS_CODES: "400 401 403 404 405 429 444"
+      BAD_BEHAVIOR_THRESHOLD: ${WAF_BADBEHAVIOR_THRESHOLD:-20}
+      BAD_BEHAVIOR_COUNT_TIME: "60"
+      BAD_BEHAVIOR_BAN_TIME: ${WAF_BAN_TIME:-300}
+      # --- Métriques internes (l'export Prometheus est une option PRO) ---
+      # On supervise le WAF via blackbox (disponibilité) et via Loki (débit, blocages,
+      # bannissements) : voir infra/loki/rules et le dashboard Grafana.
+      USE_METRICS: "yes"
+      # --- TLS : certificat auto-signé généré et renouvelé automatiquement par le scheduler.
+      # Un labo n'a pas d'autorité de certification publique ; le navigateur affichera un
+      # avertissement (certificat non reconnu), à expliquer au jury. Le trafic est chiffré
+      # entre le PC Attaquant/jury et le WAF ; en interne (WAF -> microservices) il reste en
+      # clair sur les réseaux Docker internes (non exposés, voir docs/INFRA.md §5).
+      GENERATE_SELF_SIGNED_SSL: "yes"
+      SELF_SIGNED_SSL_ALGORITHM: "ec-prime256v1"
+      SELF_SIGNED_SSL_EXPIRY: "365"
+      SELF_SIGNED_SSL_SUBJ: "${BW_TLS_SUBJECT:-/CN=alphapay.local/}"
+      # Pas de redirection HTTP->HTTPS forcée : blackbox, txprobe et la vérification de
+      # remédiation parlent en clair à bunkerweb:8080 EN INTERNE (réseaux Docker internes,
+      # non exposés) ; rediriger casserait silencieusement la preuve de reprise. HTTP :80
+      # reste donc disponible en parallèle de :443, par choix assumé — voir docs/INFRA.md §5.
+      # IMPORTANT : AUTO_REDIRECT_HTTP_TO_HTTPS vaut "yes" PAR DÉFAUT dès qu'un certificat existe
+      # (contre-intuitif) ; il faut le forcer à "no" explicitement, sinon le port interne 8080
+      # redirige (et casse en plus le Host interne, ex. https://bunkerweb:8080 qui ne parle pas TLS).
+      AUTO_REDIRECT_HTTP_TO_HTTPS: "no"
+    volumes:
+      - bw-data:/data
+    networks: [bw-universe]
+    depends_on: [bunkerweb]
+    # Démarrage à froid long (téléchargement du CRS + génération de conf, ~2-3 min) : on laisse
+    # un délai avant de compter les échecs, sinon « compose --wait » échoue à tort.
+    healthcheck:
+      test: ["CMD-SHELL", "/usr/share/bunkerweb/helpers/healthcheck-scheduler.sh"]
+      interval: 10s
+      timeout: 10s
+      start_period: 300s
+      retries: 6
+    labels: { resilience.tier: edge }
+    deploy: { resources: { limits: { memory: 384m, cpus: "1.0" } } }
+
+  # Console web BunkerWeb (GUI) : tableau de bord WAF, requêtes bloquées, IP bannies, règles actives.
+  # Publiée sur 127.0.0.1 uniquement. Les réglages posés par le scheduler (compose/.env) restent
+  # la source de vérité « as code » : la console sert à observer et gérer les bannissements.
+  bunkerweb-ui:
+    image: ${WAF_UI_IMAGE:-bunkerity/bunkerweb-ui:1.6.16}
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      DATABASE_URI: "sqlite:////db/db.sqlite3"
+      USE_REDIS: "yes"
+      REDIS_HOST: "bw-redis"
+      API_TOKEN: ${BW_API_TOKEN:?défini par ops deploy dans .env}
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: ${BW_UI_PASSWORD:?défini par ops deploy dans .env}
+      OVERRIDE_ADMIN_CREDS: "yes"
+      UI_FORWARDED_ALLOW_IPS: "127.0.0.1"
+    volumes:
+      - bw-data:/db
+      - bw-ui-data:/data
+    ports: ["${ADMIN_BIND_ADDR:-127.0.0.1}:${BW_UI_PORT:-17000}:7000"]
+    networks: [bw-universe, mgmt]
+    depends_on: [bunkerweb-scheduler, bw-redis]
+    labels: { resilience.tier: edge }
+    deploy: { resources: { limits: { memory: 256m, cpus: "0.5" } } }
+
+  frontend:
+    <<: *hardening
+    build: ./services/frontend
+    image: resilience/frontend:${APP_VERSION:-1.0.0}
+    read_only: true
+    tmpfs: ["/tmp:size=16m"]
+    networks: [app]
+    labels: { resilience.tier: business }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    deploy: { resources: { limits: { memory: 64m, cpus: "0.5" } } }
+
+  auth:
+    <<: *python-service
+    build: { context: ./services, args: { SERVICE: auth } }
+    image: resilience/auth:${APP_VERSION:-1.0.0}
+    environment:
+      DB_HOST: postgres
+      DB_NAME: payments
+      DB_USER: auth_svc
+      TOKEN_TTL_SECONDS: "900"
+    secrets: [auth_db_password, jwt_secret]
+    networks: [app, data, monitoring]
+    depends_on: { postgres: { condition: service_healthy } }
+    labels: { resilience.tier: business }
+    deploy: { resources: { limits: { memory: 192m, cpus: "1.0" } } }
+
+  payment-api:
+    <<: *python-service
+    build: { context: ./services, args: { SERVICE: payment-api } }
+    image: resilience/payment-api:${APP_VERSION:-1.0.0}
+    environment:
+      DB_HOST: postgres
+      DB_NAME: payments
+      DB_USER: payment_svc
+      MAX_AMOUNT: "10000"
+    secrets: [payment_db_password, jwt_secret]
+    networks: [app, data, monitoring]
+    depends_on: { postgres: { condition: service_healthy } }
+    labels: { resilience.tier: business }
+    deploy: { resources: { limits: { memory: 192m, cpus: "1.0" } } }
+
+  postgres:
+    <<: *hardening
+    image: postgres:16-alpine
+    user: "70:70"                       # utilisateur postgres de l'image alpine, sans root
+    read_only: true
+    tmpfs: ["/tmp:size=32m", "/var/run/postgresql:size=1m,uid=70,gid=70"]
+    environment:
+      POSTGRES_DB: payments
+      POSTGRES_USER: payments_admin
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+      - payment_db_password
+      - auth_db_password
+      - exporter_db_password
+      - demo_user_password
+      - probe_user_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/10-init.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
+    networks: [data]                    # aucune exposition, même sur 127.0.0.1
+    labels: { resilience.tier: data }
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payments_admin -d payments"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy: { resources: { limits: { memory: 512m, cpus: "1.0" } } }
+
+  # ===========================================================================
+  #  OBSERVABILITÉ
+  # ===========================================================================
+  prometheus:
+    <<: *hardening
+    image: prom/prometheus:v3.5.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --web.enable-lifecycle          # permet à Ansible de recharger la conf (POST /-/reload)
+    volumes:
+      - ./infra/prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    ports: ["${ADMIN_BIND_ADDR:-127.0.0.1}:${PROMETHEUS_PORT:-9090}:9090"]
+    networks: [monitoring, mgmt]
+    labels: { resilience.tier: observability }
+    deploy: { resources: { limits: { memory: 512m, cpus: "1.0" } } }
+
+  alertmanager:
+    <<: *hardening
+    image: prom/alertmanager:v0.28.1
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - ./infra/alertmanager:/etc/alertmanager:ro
+      - alertmanager-data:/alertmanager
+    secrets: [remediation_token]
+    ports: ["${ADMIN_BIND_ADDR:-127.0.0.1}:${ALERTMANAGER_PORT:-9093}:9093"]
+    networks: [monitoring, mgmt]
+    labels: { resilience.tier: observability }
+    deploy: { resources: { limits: { memory: 128m, cpus: "0.5" } } }
+
+  loki:
+    <<: *hardening
+    image: grafana/loki:3.5.3
+    command: ["-config.file=/etc/loki/loki.yml"]
+    volumes:
+      - ./infra/loki/loki.yml:/etc/loki/loki.yml:ro
+      - ./infra/loki/rules:/etc/loki/rules:ro
+      - loki-data:/loki
+    networks: [monitoring]
+    labels: { resilience.tier: observability }
+    deploy: { resources: { limits: { memory: 512m, cpus: "1.0" } } }
+
+  alloy:
+    <<: *hardening
+    image: grafana/alloy:v1.10.0
+    user: alloy                         # non-root : l'accès Docker passe par le proxy lecture seule
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    environment:
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-resilience}
+      DOCKER_HOST: tcp://docker-proxy-ro:2375
+    volumes:
+      - ./infra/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy-data:/var/lib/alloy
+    networks: [monitoring, dockerapi-ro, siem]   # siem : réception des alertes Wazuh (syslog)
+    depends_on: [loki, docker-proxy-ro]
+    labels: { resilience.tier: observability }
+    deploy: { resources: { limits: { memory: 256m, cpus: "0.5" } } }
+
+  grafana:
+    <<: *hardening
+    image: grafana/grafana:12.1.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: ${GRAFANA_ANONYMOUS_VIEWER:-true}   # lecture seule, utile pour le jury
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/resilience-overview.json
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    secrets: [grafana_admin_password]
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports: ["${ADMIN_BIND_ADDR:-127.0.0.1}:${GRAFANA_PORT:-3000}:3000"]
+    networks: [monitoring, mgmt]
+    depends_on: [prometheus, loki]
+    labels: { resilience.tier: observability }
+    deploy: { resources: { limits: { memory: 384m, cpus: "1.0" } } }
+
+  blackbox:
+    <<: *hardening
+    image: prom/blackbox-exporter:v0.27.0
+    command: ["--config.file=/etc/blackbox/blackbox.yml"]
+    volumes: ["./infra/blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro"]
+    networks: [monitoring]
+    labels: { resilience.tier: observability }
+    deploy: { resources: { limits: { memory: 64m, cpus: "0.25" } } }
+
+  # (waf-exporter supprimé : BunkerWeb expose nativement /metrics sur :9113)
+
+  postgres-exporter:
+    <<: *hardening
+    image: prometheuscommunity/postgres-exporter:v0.17.1
+    environment:
+      DATA_SOURCE_URI: postgres:5432/payments?sslmode=disable
+      DATA_SOURCE_USER: exporter
+      DATA_SOURCE_PASS_FILE: /run/secrets/exporter_db_password
+    secrets: [exporter_db_password]
+    networks: [data, monitoring]
+    depends_on: { postgres: { condition: service_healthy } }
+    labels: { resilience.tier: observability }
+    deploy: { resources: { limits: { memory: 64m, cpus: "0.25" } } }
+
+  # cAdvisor a besoin d'un accès privilégié à l'hôte pour lire les cgroups : c'est une
+  # exception assumée et documentée (réseau monitoring interne, aucun port publié).
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.55.1
+    privileged: true
+    devices: ["/dev/kmsg"]
+    command: ["--docker_only=true", "--housekeeping_interval=10s", "--store_container_labels=true",
+              "--disable_metrics=percpu,sched,tcp,udp,disk,diskIO,hugetlb,referenced_memory,cpu_topology,resctrl"]
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks: [monitoring]
+    logging: *logging
+    restart: unless-stopped
+    labels: { resilience.tier: observability }
+    deploy: { resources: { limits: { memory: 256m, cpus: "0.5" } } }
+
+  txprobe:
+    <<: *python-service
+    build: { context: ./services, args: { SERVICE: txprobe } }
+    image: resilience/txprobe:${APP_VERSION:-1.0.0}
+    environment:
+      PROBE_TARGET: http://bunkerweb:8080
+      PROBE_INTERVAL_SECONDS: "5"
+      PROBE_USERNAME: synthetic-probe
+    secrets: [probe_user_password]
+    networks: [app, monitoring]
+    depends_on: [bunkerweb]
+    labels: { resilience.tier: observability }
+    deploy: { resources: { limits: { memory: 128m, cpus: "0.25" } } }
+
+  # ===========================================================================
+  #  REMÉDIATION (plan de contrôle)
+  # ===========================================================================
+  remediation:
+    <<: *python-service
+    build: { context: ./services, args: { SERVICE: remediation } }
+    image: resilience/remediation:${APP_VERSION:-1.0.0}
+    environment:
+      DOCKER_API: http://docker-proxy:2375
+      COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME:-resilience}
+      TXPROBE_URL: http://txprobe:8000
+      REMEDIATION_ALLOWED_TARGETS: bunkerweb,frontend,auth,payment-api,postgres,vault
+      REMEDIATION_COOLDOWN_SECONDS: "${REMEDIATION_COOLDOWN_SECONDS:-45}"
+      REMEDIATION_VERIFY_TIMEOUT_SECONDS: "90"
+    secrets: [remediation_token]
+    ports: ["${ADMIN_BIND_ADDR:-127.0.0.1}:${REMEDIATION_PORT:-18090}:8000"]
+    networks: [monitoring, control, mgmt]
+    depends_on: [docker-proxy]
+    labels: { resilience.tier: control }
+    deploy: { resources: { limits: { memory: 128m, cpus: "0.5" } } }
+
+  # Le moteur de remédiation n'accède JAMAIS directement au socket Docker : ce proxy
+  # n'autorise que GET /containers/* et POST start/stop/restart (pas de create, exec,
+  # images, volumes, réseaux...). Toute autre requête reçoit un 403.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:v0.4.2
+    environment:
+      CONTAINERS: "1"
+      ALLOW_RESTARTS: "1"
+      ALLOW_START: "1"
+      ALLOW_STOP: "1"
+      POST: "0"
+      PING: "1"
+      VERSION: "1"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Règles HAProxy durcies : seul POST autorisé = start/stop/restart (voir le fichier)
+      - ./infra/docker-proxy/haproxy.cfg.template:/usr/local/etc/haproxy/haproxy.cfg.template:ro
+    networks: [control]
+    logging: *logging
+    restart: unless-stopped
+    labels: { resilience.tier: control }
+    deploy: { resources: { limits: { memory: 64m, cpus: "0.25" } } }
+
+  docker-proxy-ro:
+    image: tecnativa/docker-socket-proxy:v0.4.2
+    environment:
+      CONTAINERS: "1"
+      EVENTS: "1"
+      NETWORKS: "1"                     # lecture seule (POST=0) : requis par la découverte Docker
+      POST: "0"
+      PING: "1"
+      VERSION: "1"
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]
+    networks: [dockerapi-ro]
+    logging: *logging
+    restart: unless-stopped
+    labels: { resilience.tier: observability }
+    deploy: { resources: { limits: { memory: 64m, cpus: "0.25" } } }
+
+  # ===========================================================================
+  #  SIEM — Wazuh (manager + agent), SANS indexer ni dashboard
+  #  Le manager corrèle les évènements de l'agent avec les règles de détection (XSS, SQLi,
+  #  DDoS, force brute), puis envoie ses alertes en syslog JSON vers Alloy -> Loki.
+  #  La visualisation et les alertes se font dans Grafana (un seul outil pour tout).
+  #  Réseau 'siem' interne ; aucun port publié.
+  # ===========================================================================
+  wazuh.manager:
+    image: wazuh/wazuh-manager:4.14.9
+    hostname: wazuh.manager
+    restart: unless-stopped
+    logging: *logging
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile: { soft: 655360, hard: 655360 }
+    volumes:
+      - wazuh_api_configuration:/var/ossec/api/configuration
+      - wazuh_etc:/var/ossec/etc
+      - wazuh_logs:/var/ossec/logs
+      - wazuh_queue:/var/ossec/queue
+      - wazuh_var_multigroups:/var/ossec/var/multigroups
+      - wazuh_integrations:/var/ossec/integrations
+      - wazuh_active_response:/var/ossec/active-response/bin
+      - wazuh_agentless:/var/ossec/agentless
+      - wazuh_wodles:/var/ossec/wodles
+      - ./infra/wazuh/config/wazuh_cluster/wazuh_manager.conf:/wazuh-config-mount/etc/ossec.conf:ro
+      - ./infra/wazuh/config/wazuh_cluster/local_rules.xml:/wazuh-config-mount/etc/rules/local_rules.xml:ro
+      - ./infra/wazuh/config/wazuh_cluster/filebeat-disabled.sh:/etc/services.d/filebeat/run:ro   # pas d'indexer : filebeat inutile
+    networks:
+      siem:
+        aliases: [wazuh.manager]
+    labels: { resilience.tier: siem }
+    deploy: { resources: { limits: { memory: 1g, cpus: "1.5" } } }
+
+
+
+  # Log-forwarder : alimente l'agent Wazuh avec les journaux des conteneurs (voir services/logshipper)
+  logshipper:
+    <<: *hardening
+    build: { context: ./services, dockerfile: logshipper/Dockerfile }
+    image: resilience/logshipper:${APP_VERSION:-1.0.0}
+    read_only: true
+    tmpfs: ["/tmp:size=8m"]
+    environment:
+      DOCKER_API: http://docker-proxy-ro:2375
+      COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME:-resilience}
+      OUT_DIR: /var/log/agent
+    volumes:
+      - agent-logs:/var/log/agent
+    networks: [dockerapi-ro]
+    depends_on: [docker-proxy-ro]
+    labels: { resilience.tier: siem }
+    deploy: { resources: { limits: { memory: 96m, cpus: "0.5" } } }
+
+  # Agent Wazuh unique (surveille toute la plateforme) : FIM, rootcheck, SCA, analyse des
+  # journaux. Ne modifie AUCUN conteneur applicatif (durcissement préservé).
+  wazuh-agent:
+    image: wazuh/wazuh-agent:4.14.9
+    hostname: consortium-host
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      WAZUH_MANAGER: wazuh.manager
+      WAZUH_AGENT_NAME: consortium-host
+    volumes:
+      - ./infra/wazuh/config/wazuh_agent/ossec.conf:/wazuh-config-mount/etc/ossec.conf:ro
+      - agent-logs:/var/log/agent:ro
+      - ./secrets:/host-secrets:ro
+      - ./infra:/host-infra:ro
+      - ./docker-compose.yml:/host-compose/docker-compose.yml:ro
+    networks:
+      siem:
+    depends_on: [wazuh.manager, logshipper]
+    labels: { resilience.tier: siem }
+    deploy: { resources: { limits: { memory: 256m, cpus: "0.5" } } }
+
+  # ===========================================================================
+  #  GESTION DES SECRETS — HashiCorp Vault
+  #  Vault est la SOURCE DE VÉRITÉ des secrets de la plateforme (KV v2 « resilience/ »).
+  #  Ansible y range les secrets générés, et reconstruit ./secrets/ depuis Vault si le dossier
+  #  est perdu (PRA). Les conteneurs lisent toujours des Docker secrets (cache dérivé).
+  #  Vault est joignable depuis le PC Hôte uniquement (UI : http://127.0.0.1:8200).
+  # ===========================================================================
+  vault:
+    image: hashicorp/vault:1.20
+    restart: unless-stopped
+    logging: *logging
+    command: ["server"]            # l'entrypoint de l'image ajoute -config=/vault/config
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE, FOWNER]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      VAULT_ADDR: http://127.0.0.1:8200
+      SKIP_SETCAP: "true"        # pas de setcap(IPC_LOCK) : disable_mlock est actif
+    volumes:
+      - ./infra/vault/config.hcl:/vault/config/config.hcl:ro
+      - vault-data:/vault/file
+    ports: ["${ADMIN_BIND_ADDR:-127.0.0.1}:${VAULT_PORT:-18200}:8200"]
+    networks: [vault, mgmt, monitoring]
+    labels: { resilience.tier: secrets }
+    healthcheck:
+      # sain même scellé (sealedcode/uninitcode=200) : le descellement est fait par le sidecar
+      test: ["CMD-SHELL", "wget -qO- 'http://127.0.0.1:8200/v1/sys/health?sealedcode=200&uninitcode=200' >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy: { resources: { limits: { memory: 256m, cpus: "0.5" } } }
+
+  vault-unsealer:
+    image: hashicorp/vault:1.20
+    restart: unless-stopped
+    logging: *logging
+    entrypoint: ["/bin/sh", "/bootstrap.sh"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      VAULT_ADDR: http://vault:8200
+    volumes:
+      - ./infra/vault/bootstrap.sh:/bootstrap.sh:ro
+      - vault-keys:/vault/keys
+    networks: [vault]
+    depends_on: [vault]
+    labels: { resilience.tier: secrets }
+    healthcheck:
+      # sain uniquement quand Vault est descellé ET configuré (marqueur écrit par le script)
+      test: ["CMD-SHELL", "test -f /vault/keys/.ready && vault status >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+    deploy: { resources: { limits: { memory: 64m, cpus: "0.25" } } }

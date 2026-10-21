@@ -1,10 +1,28 @@
-# doc 
+# doc
 private/
-
 
 # Claude Code : préférences personnelles
 CLAUDE.local.md
 .claude/settings.local.json
+
+# Secrets et état local — ne JAMAIS versionner
+.env
+.env.*
+!.env.example
+secrets/*
+!secrets/README.md
+backups/*
+!backups/.gitkeep
+reports/*
+!reports/.gitkeep
+*.dump
+*.sops.dec.*
+__pycache__/
+*.pyc
+.venv/
+
+# Exports de données (logs Wazuh pour le ML) : volumineux, non versionnés
+exports/
 
 # OS
 Thumbs.db
@@ -15,8 +33,3 @@ Desktop.ini
 .vscode/
 .idea/
 *.swp
-
-# Secrets / environnement
-.env
-.env.*
-!.env.example

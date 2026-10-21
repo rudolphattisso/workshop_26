@@ -1,0 +1,66 @@
+# Bascule du WAF entre son mode défendu (par défaut) et un mode « démo DDoS distribué ».
+#
+# Le limiteur de débit (WAF_API_RATE) s'applique PAR IP SOURCE. Un vrai DDoS vient de centaines
+# de machines, chacune sous le seuil ; leur effet CUMULÉ sature le WAF. Un seul PC Attaquant ne
+# peut reproduire ce volume qu'en étant autorisé, le temps de la démo, à dépasser le seuil par IP
+# — ce qui représente fidèlement l'effet agrégé d'un DDoS distribué, sans désactiver la protection
+# par IP, qui reste la posture par défaut entre deux démonstrations.
+#
+# Déroulé complet de la démo (voir aussi attack/README.md et RUNBOOK.md PROC-05bis) :
+#   PC Hôte      : .\scripts\ops.ps1 ddos-demo -e mode=on
+#   PC Attaquant : python3 attack.py overload --target http://<IP-hote> --password <mdp alice>
+#   (observer dans Grafana : alerte WafDown, puis remediation_succeeded)
+#   PC Hôte      : .\scripts\ops.ps1 ddos-demo -e mode=off     # restaure les défenses + vérifie
+#
+#   scripts/ops.ps1 ddos-demo -e mode=on
+#   scripts/ops.ps1 ddos-demo -e mode=off
+- name: Basculer le WAF en mode démo DDoS (distribué simulé) ou le restaurer
+  hosts: pc-hote
+  gather_facts: false
+  vars:
+    mode: "off"
+    demo_rate: "2000r/s"
+    defended_rate: "20r/s"
+  tasks:
+    - ansible.builtin.import_tasks: ../tasks/attach_controller.yml
+    - ansible.builtin.import_tasks: ../tasks/vars_urls.yml
+
+    - name: "Démo DDoS | Mode valide"
+      ansible.builtin.assert: { that: "mode in ['on', 'off']" }
+
+    - name: "Démo DDoS | Débit retenu pour cette bascule"
+      ansible.builtin.set_fact:
+        target_rate: "{{ demo_rate if mode == 'on' else defended_rate }}"
+
+    - name: "Démo DDoS | Mettre à jour WAF_API_RATE dans .env"
+      ansible.builtin.lineinfile:
+        path: "{{ project_dir }}/.env"
+        regexp: "^WAF_API_RATE="
+        line: "WAF_API_RATE={{ target_rate }}"
+
+    - name: "Démo DDoS | Recréer le scheduler avec le nouveau débit"
+      ansible.builtin.command: "{{ compose }} up -d --wait --wait-timeout 300 bunkerweb-scheduler"
+      changed_when: true
+
+    - name: "Démo DDoS | Confirmer que le WAF répond"
+      ansible.builtin.uri: { url: "{{ waf_url }}/healthz" }
+      register: r
+      retries: 10
+      delay: 3
+      until: r.status == 200
+
+    - name: "Démo DDoS | Mode ON — instructions"
+      when: mode == 'on'
+      ansible.builtin.debug:
+        msg:
+          - "WAF en mode DÉMO DDOS : WAF_API_RATE = {{ target_rate }} (débit par IP relevé pour simuler l'effet agrégé d'un DDoS distribué)."
+          - "Depuis le PC Attaquant : python3 attack.py overload --target http://<IP-hote> --password <mot de passe alice>"
+          - "Observez dans Grafana : alerte WafDown puis sa résolution ; http://127.0.0.1:{{ lookup('ansible.builtin.ini', 'REMEDIATION_PORT', file=project_dir ~ '/.env', type='properties', default='18090') }}/events pour le détail."
+          - "Une fois la démo terminée : scripts/ops.ps1 ddos-demo -e mode=off"
+
+    - name: "Démo DDoS | Mode OFF — vérification complète de la plateforme"
+      when: mode == 'off'
+      block:
+        - ansible.builtin.debug:
+            msg: "WAF restauré en mode défendu : WAF_API_RATE = {{ target_rate }}. Vérification de la plateforme..."
+        - ansible.builtin.import_tasks: ../tasks/verify.yml

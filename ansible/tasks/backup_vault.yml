@@ -1,0 +1,44 @@
+# Sauvegarde de Vault : données (volume vault-data) + clés de descellement (volume vault-keys).
+# Sans cette archive, la perte du volume Vault régénère des secrets qui ne correspondent plus
+# aux mots de passe déjà inscrits dans la base. L'archive contient AUSSI les clés : elle équivaut
+# à un accès total aux secrets -> droits 0600, jamais versionnée (backups/ est ignoré par Git).
+# En production : clés Shamir réparties / KMS, jamais stockées avec les données.
+- name: "Sauvegarde Vault | Dossier backups/"
+  ansible.builtin.file: { path: "{{ backup_dir }}", state: directory, mode: "0750" }
+
+- name: "Sauvegarde Vault | Nom du fichier"
+  ansible.builtin.set_fact:
+    vault_backup: "vault-{{ '%Y%m%dT%H%M%SZ' | strftime(now().timestamp() | int, utc=true) }}.tar.gz"
+
+- name: "Sauvegarde Vault | Archive des deux volumes (Vault arrêté brièvement pour un état cohérent)"
+  ansible.builtin.shell: |
+    set -e
+    {{ compose }} stop vault vault-unsealer
+    docker run --rm -v {{ compose_project }}_vault-data:/d -v {{ compose_project }}_vault-keys:/k alpine \
+      sh -c 'tar czf - -C / d k' > "{{ backup_dir }}/{{ vault_backup }}"
+    {{ compose }} start vault vault-unsealer
+    chmod 600 "{{ backup_dir }}/{{ vault_backup }}"
+    cd "{{ backup_dir }}" && sha256sum "{{ vault_backup }}" > "{{ vault_backup }}.sha256"
+  args: { executable: /bin/bash }
+  changed_when: true
+
+- name: "Sauvegarde Vault | Contrôle de l'archive (lisible, contient les deux volumes)"
+  ansible.builtin.shell: >-
+    tar tzf "{{ backup_dir }}/{{ vault_backup }}" | grep -cE '^(d|k)/'
+  register: vault_tar
+  changed_when: false
+  failed_when: vault_tar.stdout | int < 3
+
+- name: "Sauvegarde Vault | Rotation (conserver les {{ backup_keep }} plus récentes)"
+  ansible.builtin.shell: >-
+    cd "{{ backup_dir }}" && ls -1t vault-*.tar.gz 2>/dev/null | tail -n +{{ backup_keep | int + 1 }}
+    | while read f; do rm -f "$f" "$f.sha256"; done
+  changed_when: false
+
+- name: "Sauvegarde Vault | Attendre que Vault soit de nouveau descellé"
+  ansible.builtin.command: "{{ compose }} up -d --wait --wait-timeout 120 vault vault-unsealer"
+  changed_when: false
+
+- name: "Sauvegarde Vault | Résultat"
+  ansible.builtin.debug:
+    msg: "{{ vault_backup }} ({{ vault_tar.stdout }} entrées) — contient les clés de descellement : à protéger"
