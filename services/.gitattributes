@@ -1,3 +1,0 @@
-# Scripts exécutés dans des conteneurs Linux : fins de ligne LF obligatoires, même depuis Windows
-*.sh text eol=lf
-Dockerfile text eol=lf
