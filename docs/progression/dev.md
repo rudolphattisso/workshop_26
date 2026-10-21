@@ -333,3 +333,14 @@ affichait « inconnu » au lieu de « base en panne ». Corrigé : vérification
 (réseaux `mgmt` + `monitoring`, `127.0.0.1` seulement, il doit joindre `auth` et `remediation`).
 
 **Prochain démarrage** : alertes du watchdog → playbook `SERVICE_DOWN` (restart via docker-proxy) → preuve de reprise
+
+## 2026-10-21 — Popups d'alerte sur le dashboard (`dev/dashboard-alerts`)
+
+**Fait** : popup à chaque panne détectée par le watchdog, et quand ça revient.
+- Panne (rouge) : reste affichée tant qu'elle dure ; chaque élément rétabli en est retiré, la popup disparaît quand tout est revenu
+- Dégradé / plus mesurable (orange) : 15 s · Rétabli (vert) : 10 s, avec la **durée de l'interruption**
+- **Une popup par passage du watchdog**, pas par élément : une panne de base touche 5 éléments à la fois
+- Titre de l'onglet « ⚠ N en panne » ; `role="alert"` pour les lecteurs d'écran
+- Pas de popup pour l'historique d'avant l'ouverture du dashboard, ni de doublon après une reconnexion du flux
+
+**Tests** : 15 Vitest (logique des popups isolée dans `lib/alerts.js`, sans React)

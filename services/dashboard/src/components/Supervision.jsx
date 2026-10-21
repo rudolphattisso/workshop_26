@@ -1,9 +1,14 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { dropRecovered, groupAlerts, takeNewChanges, toAlert } from "../lib/alerts.js";
 import { readEvents, Unauthorized } from "../lib/sse.js";
 import { OVERALL_TEXT, overall, styleOf } from "../lib/status.js";
+import AlertPopups from "./AlertPopups.jsx";
 import TopologyMap from "./TopologyMap.jsx";
 import ComponentList from "./ComponentList.jsx";
 import ChangeLog from "./ChangeLog.jsx";
+
+const MAX_POPUPS = 6;
+const PAGE_TITLE = "Supervision — Resilience";
 
 const RETRY_MS = 2000;
 const STALE_MS = 20000; // pas un octet depuis 20 s (battement toutes les 15 s) : le flux est considéré coupé
@@ -12,6 +17,42 @@ export default function Supervision({ token, onSignOut }) {
   const [topology, setTopology] = useState(null);
   const [lastMessageAt, setLastMessageAt] = useState(null);
   const [now, setNow] = useState(Date.now());
+  const [alerts, setAlerts] = useState([]);
+  const seen = useRef(new Set()); // changements déjà traités (pas de doublon après une reconnexion)
+  const firstLoad = useRef(true);
+  const downSince = useRef({}); // id → début de la panne, pour annoncer la durée de l'interruption
+
+  const closeAlert = useCallback((id) => setAlerts((current) => current.filter((a) => a.id !== id)), []);
+
+  // Chaque nouveau changement d'état devient une popup. Un retour à la normale remplace la popup de panne.
+  const notify = useCallback((changes) => {
+    const fresh = takeNewChanges(changes, seen.current, firstLoad.current);
+    if (firstLoad.current) {
+      // Historique d'avant l'ouverture : pas de popup, mais on retient les débuts de panne pour la durée.
+      [...changes].reverse().forEach((c) => c.to === "down" && (downSince.current[c.id] = c.at));
+      firstLoad.current = false;
+    }
+    if (!fresh.length) return;
+    const created = [];
+    const recovered = new Set();
+    for (const change of fresh) {
+      if (change.to === "down") downSince.current[change.id] = change.at;
+      if (change.to !== "down") recovered.add(change.id); // plus en panne : retiré de la popup de panne
+      const alert = toAlert(change, downSince.current);
+      if (alert) created.push(alert);
+    }
+    const popups = groupAlerts(created).reverse(); // la plus récente en haut
+    setAlerts((current) => [...popups, ...dropRecovered(current, recovered)].slice(0, MAX_POPUPS));
+  }, []);
+
+  // Onglet du navigateur : « ⚠ » tant qu'une panne est affichée, visible même depuis un autre onglet.
+  useEffect(() => {
+    const open = alerts.filter((a) => a.level === "critical").reduce((n, a) => n + a.items.length, 0);
+    document.title = open ? `⚠ ${open} en panne — ${PAGE_TITLE}` : PAGE_TITLE;
+    return () => {
+      document.title = PAGE_TITLE;
+    };
+  }, [alerts]);
 
   // Flux temps réel avec reconnexion automatique : à chaque reconnexion, le moteur renvoie l'état complet.
   useEffect(() => {
@@ -24,7 +65,10 @@ export default function Supervision({ token, onSignOut }) {
           token,
           ({ event, data }) => {
             setLastMessageAt(Date.now());
-            if (event === "services") setTopology(data);
+            if (event === "services") {
+              setTopology(data);
+              notify(data.changes ?? []);
+            }
           },
           controller.signal,
         );
@@ -39,7 +83,7 @@ export default function Supervision({ token, onSignOut }) {
       controller.abort();
       clearTimeout(retry);
     };
-  }, [token, onSignOut]);
+  }, [token, onSignOut, notify]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -52,6 +96,7 @@ export default function Supervision({ token, onSignOut }) {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-4 py-6">
+      <AlertPopups alerts={alerts} onClose={closeAlert} />
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold">Supervision · RESILIENCE-ALPHA</h1>
