@@ -10,8 +10,8 @@ par une **nouvelle transaction réussie**.
 
 | Membre | Domaine |
 |---|---|
-| ATTISSO Rudolph | Développement (EISI) |
-| BOZZANI Arman | Infrastructure (EISI) |
+| ATTISSO Rudolph | Développement (EISI dev) |
+| BOZZANI Arman | Infrastructure (EISI infra) |
 | TRAN HUU Tri Quentin | IA / Data |
 | GARCIA Robin | Cybersécurité |
 | BREMARD Thomas | Cybersécurité |
