@@ -8,6 +8,22 @@ Microservices Python/FastAPI et interfaces React de RESILIENCE-ALPHA. Les choix 
 | `common/` | Socle partagé : logs JSON, trace_id, `/health` `/ready` `/metrics`, erreurs RFC 9457, vérification JWT |
 | `auth/` | Connexion, jetons RS256, JWKS (`contracts/openapi-payment.yaml`, tag auth ; ADR-DEV-0003) |
 | `payment-api/` | Comptes et paiements fictifs (`contracts/openapi-payment.yaml`) |
+| `web/` | Frontal client React + Tailwind (connexion, solde, payer, historique), servi par nginx non-root sur 8080 (service Compose `frontend`) |
+| `smoke-test/` | Transaction de bout en bout à travers le WAF, toutes les 5 s et sur `GET /check` (service Compose `txprobe`) |
+
+## Essayer l'application complète (front compris)
+
+```bash
+cd services
+docker compose -f compose.dev.yml --env-file .env --profile app up -d --build --wait
+```
+
+Puis ouvrir **http://127.0.0.1:8080** : la passerelle `gateway` (`dev/gateway.conf`) imite le WAF de l'Infra
+(`/api/auth*` → auth, `/api/payments*` et `/api/accounts*` → payment-api, le reste → web). Identifiants : `alice`,
+`bob`, `cafe-demo` avec `DEMO_CLIENT_PASSWORD` de `.env`. Swagger : ports 8001 (auth), 8002 (payment-api),
+8003 (smoke-test). Arrêt : `docker compose -f compose.dev.yml --profile app down`.
+
+Front seul avec rechargement à chaud : `cd web && npm install && npm run dev` (relaie `/api` vers la passerelle).
 
 ## Développer en local (Windows, Git Bash)
 
@@ -40,13 +56,41 @@ DATABASE_URL=$AUTH_DATABASE_URL ../.venv/Scripts/python -m app.seed
 DATABASE_URL=$AUTH_DATABASE_URL ENABLE_DOCS=true ../.venv/Scripts/python -m uvicorn app.main:app --port 8001
 ```
 
+## Routes publiques et configuration en déploiement
+
+Le WAF (BunkerWeb, Infra) est le seul point d'entrée et transmet l'URI **sans la réécrire** : les routes
+publiques sont donc préfixées `/api/...` (ADR-DEV-0005).
+
+| Public (via le WAF) | Service | Sonde publique |
+|---|---|---|
+| `/api/auth/*` | `auth` | `/api/auth/ready` |
+| `/api/payments*`, `/api/accounts*` | `payment-api` | `/api/payments/ready` |
+| `/api/operations/*` | `payment-api` | — non publié : réseau interne seulement |
+
+`/health`, `/ready` et `/metrics` restent servis à la racine pour Docker et Prometheus (réseau interne).
+
+Secrets : convention `<NOM>_FILE` (fichier `/run/secrets/<nom>` monté par Compose, alimenté par Vault).
+Base : `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD_FILE`. En local, `DATABASE_URL` et les variables
+`<NOM>` de `.env` restent acceptées.
+
 ## auth : jetons
 
-- `POST /auth/login` → jeton RS256 de 15 min. `payment-api` le vérifie avec la clé publique (`AUTH_JWKS_URL`),
+- `POST /api/auth/login` → jeton RS256 de 15 min. `payment-api` le vérifie avec la clé publique (`AUTH_JWKS_URL`),
   gardée en cache : une panne de l'auth n'interrompt pas les paiements en cours.
 - Clé de signature : `JWT_PRIVATE_KEY_FILE` si défini, sinon clé éphémère. **Redémarrer l'auth révoque alors
   tous les jetons** (levier de remédiation en cas de compromission).
 - Utilisateurs de démo : `alice`, `bob`, `cafe-demo` (clients), `smoke-client` (smoke test), `operator`.
+
+## smoke-test : preuve de reprise
+
+- Parcours d'un vrai client, **à travers le WAF** : login `smoke-client` → `GET /api/accounts` → paiement de
+  **1 centime** → relecture. 1 centime : le compte tient ~5,8 jours à une transaction toutes les 5 s (à 1 €, 83 min).
+- `GET /check` : une transaction à la demande, `200 {ok: true, tx_id, duration_s, trace_id}` ou
+  `503 {ok: false, step, error, …}`. Utilisé par le moteur de remédiation. **Réseau interne seulement** (vrai paiement).
+- Métriques reprises du `txprobe` de l'Infra : `synthetic_transaction_success`, `_duration_seconds`,
+  `_last_success_timestamp`, `synthetic_transactions_total{result,step}`, plus `synthetic_account_balance_cents`.
+- Un trace_id par transaction (en-tête `X-Trace-Id`, aussi utilisé comme `Idempotency-Key`) : la transaction se
+  suit dans les logs de tous les services.
 
 ## payment-api : données
 

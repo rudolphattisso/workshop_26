@@ -7,9 +7,8 @@ Usage : python -m app.seed
 """
 
 import logging
-import uuid
 
-from resilience_common.identity import user_id
+from resilience_common.identity import account_id, user_id
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -19,16 +18,12 @@ from app.models import Account, AccountKind, EntryKind, LedgerEntry
 log = logging.getLogger(__name__)
 
 
-def account_id(username: str) -> uuid.UUID:
-    return uuid.uuid5(uuid.NAMESPACE_URL, f"resilience-alpha:account:{username}")
-
-
 # (propriétaire, type, libellé, solde d'ouverture en centimes). L'opérateur n'a pas de compte.
 DEMO_ACCOUNTS = [
     ("alice", AccountKind.CUSTOMER, "Compte courant Alice (fictif)", 150_000),
     ("bob", AccountKind.CUSTOMER, "Compte courant Bob (fictif)", 80_000),
     ("cafe-demo", AccountKind.MERCHANT, "Café Démo (marchand fictif)", 0),
-    # Réservés au smoke test : 1 € par vérification, de quoi tenir 1 000 reprises.
+    # Réservés au smoke test : 1 centime par transaction, soit ~100 000 transactions (~5,8 jours à une toutes les 5 s).
     ("smoke-client", AccountKind.CUSTOMER, "Smoke test — client", 100_000),
     ("smoke-merchant", AccountKind.MERCHANT, "Smoke test — marchand", 0),
 ]

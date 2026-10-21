@@ -41,7 +41,7 @@ def as_user():
 def pay(client: TestClient, amount=2_500, key=None, src="alice", dst="cafe-demo", **extra):
     body = {"from_account_id": str(account_id(src)), "to_account_id": str(account_id(dst)), "amount_cents": amount}
     body.update(extra)
-    return client.post("/payments", json=body, headers={"Idempotency-Key": key or uuid.uuid4().hex})
+    return client.post("/api/payments", json=body, headers={"Idempotency-Key": key or uuid.uuid4().hex})
 
 
 def balance(name: str) -> int:
@@ -92,7 +92,7 @@ def test_insufficient_funds_is_rejected_and_recorded(as_user):
 def test_unknown_destination_is_rejected(as_user):
     client = as_user(ALICE)
     body = {"from_account_id": str(account_id("alice")), "to_account_id": str(uuid.uuid4()), "amount_cents": 100}
-    response = client.post("/payments", json=body, headers={"Idempotency-Key": "unknown-dest-1"})
+    response = client.post("/api/payments", json=body, headers={"Idempotency-Key": "unknown-dest-1"})
     assert response.status_code == 422
     assert response.json()["rejection_reason"] == "UNKNOWN_DESTINATION"
 
@@ -122,13 +122,13 @@ def test_cannot_debit_someone_elses_account(as_user):
 def test_invalid_requests_are_400(as_user, amount, extra, headers):
     body = {"from_account_id": str(account_id("alice")), "to_account_id": str(account_id("cafe-demo")), "amount_cents": amount}
     body.update(extra)
-    response = as_user(ALICE).post("/payments", json=body, headers=headers if headers is not None else {"Idempotency-Key": uuid.uuid4().hex})
+    response = as_user(ALICE).post("/api/payments", json=body, headers=headers if headers is not None else {"Idempotency-Key": uuid.uuid4().hex})
     assert response.status_code == 400
     assert balance("alice") == 150_000
 
 
 def test_unauthenticated_request_is_401():
-    response = TestClient(app).get("/accounts")
+    response = TestClient(app).get("/api/accounts")
     assert response.status_code == 401
     assert response.headers["WWW-Authenticate"] == "Bearer"
 
@@ -147,10 +147,10 @@ def test_real_jwt_from_auth_service_is_accepted(monkeypatch):
         key, algorithm="RS256", headers={"kid": "test-kid"},
     )
     client = TestClient(app)
-    accounts = client.get("/accounts", headers={"Authorization": f"Bearer {token}"})
+    accounts = client.get("/api/accounts", headers={"Authorization": f"Bearer {token}"})
     assert accounts.status_code == 200
     assert [a["id"] for a in accounts.json()] == [str(account_id("alice"))]
-    assert client.get("/operations/consistency", headers={"Authorization": f"Bearer {token}"}).status_code == 403
+    assert client.get("/api/operations/consistency", headers={"Authorization": f"Bearer {token}"}).status_code == 403
 
 
 # ------------------------------------------------------------------ concurrence
@@ -193,25 +193,25 @@ def test_concurrent_requests_with_same_key_debit_once():
 
 
 def test_client_sees_only_own_accounts(as_user):
-    accounts = as_user(ALICE).get("/accounts").json()
+    accounts = as_user(ALICE).get("/api/accounts").json()
     assert [a["id"] for a in accounts] == [str(account_id("alice"))]
 
 
 def test_operator_sees_all_accounts(as_user):
-    assert len(as_user(OPERATOR).get("/accounts").json()) == 5
+    assert len(as_user(OPERATOR).get("/api/accounts").json()) == 5
 
 
 def test_other_clients_account_is_404_not_403(as_user):
-    assert as_user(BOB).get(f"/accounts/{account_id('alice')}").status_code == 404
+    assert as_user(BOB).get(f"/api/accounts/{account_id('alice')}").status_code == 404
 
 
 def test_payment_visible_to_payer_and_merchant_only(as_user):
     payment_id = pay(as_user(ALICE)).json()["id"]
-    assert as_user(ALICE).get(f"/payments/{payment_id}").status_code == 200
-    assert as_user(CAFE).get(f"/payments/{payment_id}").status_code == 200
-    assert as_user(BOB).get(f"/payments/{payment_id}").status_code == 404
-    assert as_user(BOB).get("/payments").json() == []
-    assert len(as_user(OPERATOR).get("/payments").json()) == 1
+    assert as_user(ALICE).get(f"/api/payments/{payment_id}").status_code == 200
+    assert as_user(CAFE).get(f"/api/payments/{payment_id}").status_code == 200
+    assert as_user(BOB).get(f"/api/payments/{payment_id}").status_code == 404
+    assert as_user(BOB).get("/api/payments").json() == []
+    assert len(as_user(OPERATOR).get("/api/payments").json()) == 1
 
 
 # ------------------------------------------------------------------ cohérence
@@ -221,7 +221,7 @@ def test_consistency_ok_after_payments(as_user):
     client = as_user(ALICE)
     pay(client, amount=2_500)
     pay(client, amount=1_000_000)  # refusé
-    report = as_user(OPERATOR).get("/operations/consistency").json()
+    report = as_user(OPERATOR).get("/api/operations/consistency").json()
     assert report["consistent"] is True
     assert report["total_balance_cents"] == report["expected_total_cents"] == 330_000
     assert report["violations"] == []
@@ -231,7 +231,7 @@ def test_consistency_detects_direct_balance_tampering(as_user):
     # Simule une attaque qui modifie un solde directement en base (ex. injection SQL).
     with get_engine().begin() as conn:
         conn.execute(text("UPDATE accounts SET balance_cents = balance_cents + 99900 WHERE id = :id"), {"id": account_id("bob")})
-    report = as_user(OPERATOR).get("/operations/consistency").json()
+    report = as_user(OPERATOR).get("/api/operations/consistency").json()
     assert report["consistent"] is False
     assert {v["rule"] for v in report["violations"]} == {"TOTAL_MISMATCH", "BALANCE_LEDGER_MISMATCH"}
 
@@ -240,9 +240,9 @@ def test_consistency_detects_deleted_ledger_entry(as_user):
     payment_id = pay(as_user(ALICE)).json()["id"]
     with get_engine().begin() as conn:
         conn.execute(text("DELETE FROM ledger_entries WHERE payment_id = :id AND kind = 'CREDIT'"), {"id": payment_id})
-    rules = {v["rule"] for v in as_user(OPERATOR).get("/operations/consistency").json()["violations"]}
+    rules = {v["rule"] for v in as_user(OPERATOR).get("/api/operations/consistency").json()["violations"]}
     assert "UNBALANCED_PAYMENT" in rules
 
 
 def test_consistency_is_operator_only(as_user):
-    assert as_user(ALICE).get("/operations/consistency").status_code == 403
+    assert as_user(ALICE).get("/api/operations/consistency").status_code == 403

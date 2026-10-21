@@ -212,3 +212,96 @@
 - **Infra + Cyber** (toujours bloquant) : mode d'action sur les conteneurs ; procédure de restauration de la base `payment`
 
 **Prochain démarrage** : smoke test (`services/smoke-test`), puis moteur de remédiation v0 (watchdog + `SERVICE_DOWN`)
+
+## 2026-10-20 (soir) — Alignement sur la plateforme de l'Infra (`dev/infra-alignment`)
+
+**Contexte** : lecture de la branche `infrastructure` (Arman). Ses `services/` sont des bouche-trous ; ses choix
+d'infrastructure (WAF, secrets, noms Compose, Alertmanager, docker-proxy) fixent l'interface avec nos services.
+
+**Fait**
+- Routes publiques préfixées `/api` : `/api/auth/*`, `/api/accounts*`, `/api/payments*`, `/api/operations/*` (non publié par le WAF)
+- `create_app(public_prefix=...)` : `/health` et `/ready` aussi servis sous le préfixe (sondes boîte noire via le WAF),
+  jamais `/metrics` ; sondes enregistrées avant les routes métier (`/api/payments/ready` ≠ `/api/payments/{id}`)
+- `resilience_common.config` : secrets en `<NOM>_FILE` (`/run/secrets/…`), base en `DB_HOST/DB_NAME/DB_USER/DB_PASSWORD_FILE`
+  (`DATABASE_URL` toujours accepté en local)
+- Contrats : `openapi-payment.yaml` 0.4.0, `alert.schema.json` 0.2.0 (cibles = services Compose ; correction
+  `oneOf` → `anyOf` sur `source_ip`), `openapi-remediation.yaml` 0.2.0 (`/webhook/alertmanager`, repli sur le label
+  `remediation`, docker-proxy restart/stop/start), `service-conventions.md` 0.3
+- ADR-DEV-0005
+
+**Tests**
+- 104 tests pytest verts (common 43 · payment-api 40 · auth 21), dont 6 nouveaux pour les secrets et 3 pour les sondes publiques
+- Intégration Docker « comme chez l'Infra » (lecture seule, `cap_drop: ALL`, secrets fichiers avec `@/:`, une seule
+  instance `postgres` avec deux bases) : login → paiement `CAPTURED` → cohérence OK ; aucun secret dans `env` ;
+  base arrêtée ⇒ `/ready` 503 et `/health` 200, reprise automatique en ~1 s au retour de la base
+
+**Problèmes rencontrés**
+- `oneOf: [ipv4, ipv6]` rejetait toute IP avec un validateur qui ne vérifie pas les `format` (défaut en 2020-12) : corrigé en `anyOf`
+- Un remplacement par `sed` a cassé 4 f-strings dans les tests : détecté par pytest, corrigé
+
+**À demander — Infra (Arman)**
+- `10-init.sh` : créer seulement les rôles et les bases `payment` (propriétaire `payment_api`) et `auth` (propriétaire `auth_service`) ; les tables viennent de nos migrations Alembic. Sauvegardes sur ces deux bases
+- Compose `auth` : `DB_NAME=auth`, `DB_USER=auth_service`, `DB_PASSWORD_FILE`, `DEMO_CLIENT_PASSWORD_FILE`, `SMOKE_CLIENT_PASSWORD_FILE`, `OPERATOR_PASSWORD_FILE` ; nouveau secret `operator_password` ; retirer `jwt_secret`
+- Compose `payment-api` : `DB_NAME=payment`, `DB_USER=payment_api`, `DB_PASSWORD_FILE`, `AUTH_JWKS_URL=http://auth:8000/api/auth/.well-known/jwks.json` ; retirer `jwt_secret`
+- `build:` → `{ context: ./services, dockerfile: <service>/Dockerfile }`
+- WAF : ajouter la route `/api/accounts` → `payment-api:8000`
+- Alloy : lire le champ `event` (au lieu de `msg`) pour le label `event`
+- Règles Prometheus : label `incident_type` conseillé (ex. `DEPENDENCY_DOWN` sur `PostgresDown`)
+- **Restauration des données déclenchable par le moteur sans humain** (`DATA_TAMPERING`) : seul playbook encore bloqué
+- Au merge : retirer ses services provisoires de `services/`, rebaser sur `develop`, résoudre le doublon `README.md` / `README.MD`
+
+**Prochain démarrage** : message à Arman, puis smoke test (remplaçant de `txprobe` : `GET /check`, métrique `synthetic_transaction_success`)
+
+## 2026-10-20 (soir, suite) — Smoke test (`dev/smoke-test`, empilée sur `dev/infra-alignment`)
+
+**Fait**
+- `services/smoke-test` : remplaçant du `txprobe` de l'Infra, même contrat (`GET /check` → `{ok, tx_id, duration_s}`,
+  métriques `synthetic_transaction_*`), donc ses alertes et son dashboard Grafana restent valables
+- Parcours client à travers le WAF : login → `GET /api/accounts` → paiement → relecture ; boucle de fond toutes les 5 s
+  et `/check` à la demande (verrou : jamais deux transactions en même temps) ; `/check` répond 503 en cas d'échec
+- Un trace_id par transaction, envoyé en `X-Trace-Id` et utilisé comme `Idempotency-Key`
+- Nouvelle métrique `synthetic_account_balance_cents` ; `account_id()` déplacé dans `resilience_common.identity`
+
+**Décisions techniques**
+- **1 centime par transaction** au lieu de 1 € : à 1 €, toutes les 5 s, le compte `smoke-client` (1 000 €) était vide en
+  83 min ⇒ échec de la sonde en pleine démo. À 1 centime : ~5,8 jours
+- Connexion à chaque transaction, sans jeton en cache : on prouve que l'auth marche, et une révocation (redémarrage de
+  l'auth) ne fait pas échouer la sonde à tort
+- Pas de contrôle de cohérence dans la sonde : il exige le rôle opérateur ; c'est le moteur qui l'appelle (moindre privilège)
+
+**Tests**
+- 14 tests pytest (fausse plateforme `httpx.MockTransport` : succès, panne réseau, 401, 429, paiement rejeté, relecture
+  incohérente, mot de passe absent des rapports, démarrage refusé sans mot de passe) ; 118 tests au total
+- Intégration Docker derrière un nginx qui imite BunkerWeb : `/check` 200 en ~0,2 s ; même trace_id dans les logs de
+  l'auth, de payment-api et du smoke test ; auth ou payment-api arrêtée ⇒ 503 avec l'étape en cause
+
+**Problème découvert (à remonter à l'Infra)**
+- Un nginx qui résout ses back-ends **une seule fois au démarrage** garde les anciennes adresses IP. En arrêtant puis
+  relançant `auth` et `payment-api`, leurs IP se sont échangées : `/api/auth/login` est parti vers payment-api (404)
+  pendant plus de 30 s, alors que les deux conteneurs étaient « Healthy ». Avec une résolution dynamique
+  (`resolver 127.0.0.11 valid=5s`), reprise en ~7 s. À vérifier sur BunkerWeb ; sinon, IP fixes sur le réseau `app`
+
+**Prochain démarrage** : moteur de remédiation v0 (watchdog + playbook `SERVICE_DOWN` + vérification par `/check`)
+
+## 2026-10-21 — Frontal web (`dev/web`, empilée sur `dev/smoke-test`)
+
+**Fait**
+- `services/web` : Vite + React 18 + Tailwind 3 (ADR-DEV-0001) — connexion, solde, paiement vers des bénéficiaires
+  fictifs, historique (opérations entrantes/sortantes, refus)
+- Image `nginx-unprivileged` : port 8080, `GET /healthz`, lecture seule (contrat du `frontend` de l'Infra), CSP stricte
+- `compose.dev.yml`, profil `app` : toute l'application en local derrière une passerelle nginx qui imite le WAF
+  (`dev/gateway.conf`, résolution DNS dynamique)
+
+**Décisions techniques**
+- Jeton JWT **en mémoire uniquement** (pas de localStorage, illisible par un script injecté) ; recharger = se reconnecter
+- Même origine pour le front et l'API (`/api/...` via le WAF) : pas de CORS à ouvrir
+- Montants saisis convertis en centimes par traitement de texte, jamais en virgule flottante
+- Clé d'idempotence conservée tant que le paiement n'a pas de réponse définitive : « Réessayer » ne débite jamais deux fois
+- Toute réponse 401 (jeton expiré ou révoqué par un redémarrage de l'auth) ramène à la connexion
+
+**Tests** : 16 tests Vitest (conversion et affichage des montants), lancés aussi pendant le build Docker
+
+**Problème rencontré** : les en-têtes de sécurité disparaissaient — nginx n'hérite pas des `add_header` du bloc `server`
+dès qu'une `location` en déclare un (`Cache-Control`). Corrigé par un fichier inclus dans chaque `location`
+
+**À demander — Infra** : service `frontend` → `build: { context: ./services, dockerfile: web/Dockerfile }` (port 8080 et `/healthz` inchangés)

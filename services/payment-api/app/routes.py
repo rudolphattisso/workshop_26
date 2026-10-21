@@ -22,7 +22,9 @@ from app.payments import (
 from app.schemas import AccountOut, ConsistencyReport, PaymentOut, PaymentRequest
 from app.security import CurrentUser, get_current_user, require_operator
 
-router = APIRouter()
+# Préfixe /api : le WAF transmet l'URI telle quelle (/api/payments*, /api/accounts*) sans réécriture.
+# /api/operations/* n'est pas publié par le WAF : réservé au réseau interne (moteur de remédiation).
+router = APIRouter(prefix="/api")
 
 
 def _account_query(user: CurrentUser):

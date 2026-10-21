@@ -1,16 +1,16 @@
 """Utilisateurs fictifs de démonstration. Idempotent : peut être relancé à chaque démarrage.
 
-Les mots de passe ne sont jamais dans le code : ils arrivent par variables d'environnement (fournies par
-Vault/SOPS) et ne sont stockés que hachés. Si une variable change, le haché est mis à jour au démarrage
+Les mots de passe ne sont jamais dans le code : ils arrivent en secrets Docker (`<NOM>_FILE`, alimentés par
+Vault) ou, en local, en variables d'environnement, et ne sont stockés que hachés. Si un secret change, le haché est mis à jour au démarrage
 suivant : c'est ainsi qu'on fait tourner un mot de passe.
 
 Usage : python -m app.seed
 """
 
 import logging
-import os
 import sys
 
+from resilience_common.config import secret
 from resilience_common.identity import user_id
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -23,7 +23,7 @@ log = logging.getLogger(__name__)
 
 MIN_PASSWORD_LENGTH = 12
 
-# (nom, rôle, variable d'environnement du mot de passe). Mêmes noms que les comptes de payment-api.
+# (nom, rôle, nom du secret du mot de passe). Mêmes noms que les comptes de payment-api.
 DEMO_USERS = [
     ("alice", Role.client, "DEMO_CLIENT_PASSWORD"),
     ("bob", Role.client, "DEMO_CLIENT_PASSWORD"),
@@ -39,12 +39,12 @@ class SeedConfigError(Exception):
 
 
 def passwords_from_env() -> dict[str, str]:
-    """Lit les mots de passe requis ; refuse une variable absente ou trop courte (ex. « change-me »)."""
+    """Lit les mots de passe requis ; refuse un secret absent ou trop court (ex. « change-me »)."""
     passwords = {}
     for var in sorted({var for _, _, var in DEMO_USERS}):
-        value = os.environ.get(var, "")
+        value = secret(var, required=False) or ""
         if len(value) < MIN_PASSWORD_LENGTH:
-            raise SeedConfigError(f"{var} absente ou plus courte que {MIN_PASSWORD_LENGTH} caractères")
+            raise SeedConfigError(f"{var} absent ou plus court que {MIN_PASSWORD_LENGTH} caractères")
         passwords[var] = value
     return passwords
 

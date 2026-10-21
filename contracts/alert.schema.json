@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://resilience-alpha.local/contracts/alert.schema.json",
   "title": "Alerte de sécurité / disponibilité — RESILIENCE-ALPHA",
-  "description": "Format unique des alertes envoyées au moteur de remédiation (POST /alerts, voir contracts/openapi-remediation.yaml). Producteurs : IA (modèle ML), WAF / SOC (Cyber), et la surveillance intégrée du moteur (watchdog). Prometheus/Alertmanager utilise son format natif sur POST /alerts/alertmanager, avec les mêmes valeurs en labels. Le champ incident_type choisit le playbook : c'est le seul champ qui déclenche une action. Version 0.1.0 — 2026-10-20.",
+  "description": "Format unique des alertes envoyées au moteur de remédiation (POST /alerts, voir contracts/openapi-remediation.yaml). Producteurs : IA (modèle ML), WAF / SOC (Cyber), et la surveillance intégrée du moteur (watchdog). Prometheus/Alertmanager utilise son format natif sur POST /webhook/alertmanager (conversion décrite dans openapi-remediation.yaml). Le champ incident_type choisit le playbook : c'est le seul champ qui déclenche une action. Version 0.2.0 — 2026-10-20.",
   "type": "object",
   "additionalProperties": false,
   "required": ["alert_id", "source", "incident_type", "target", "severity", "detected_at", "summary"],
@@ -24,9 +24,9 @@
       "enum": ["SERVICE_DOWN", "DEPENDENCY_DOWN", "TRAFFIC_FLOOD", "BRUTE_FORCE", "TOKEN_COMPROMISE", "DATA_TAMPERING"]
     },
     "target": {
-      "description": "Composant touché, tel que nommé dans docker-compose.yml.",
+      "description": "Composant touché : nom du service dans docker-compose.yml (Infra). C'est aussi la liste blanche des conteneurs sur lesquels le moteur peut agir. postgres héberge les bases payment et auth ; frontend est le frontal web ; bunkerweb est le WAF.",
       "type": "string",
-      "enum": ["payment-api", "auth", "payment-db", "auth-db", "web"]
+      "enum": ["payment-api", "auth", "postgres", "frontend", "bunkerweb", "vault"]
     },
     "severity": {
       "description": "Gravité estimée par l'émetteur. Informative (tri et affichage sur le dashboard) : l'émetteur n'envoie que des alertes qui justifient une action.",
@@ -49,7 +49,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "source_ip": { "type": "string", "oneOf": [{ "format": "ipv4" }, { "format": "ipv6" }] },
+        "source_ip": { "type": "string", "anyOf": [{ "format": "ipv4" }, { "format": "ipv6" }] },
         "score": { "description": "Score d'anomalie du modèle ML, entre 0 et 1.", "type": "number", "minimum": 0, "maximum": 1 },
         "metric": { "description": "Métrique Prometheus en cause.", "type": "string", "maxLength": 128 },
         "value": { "type": "number" },
@@ -80,7 +80,7 @@
       "alert_id": "siem-20261022T103011Z-tamper",
       "source": "siem",
       "incident_type": "DATA_TAMPERING",
-      "target": "payment-db",
+      "target": "postgres",
       "severity": "critical",
       "detected_at": "2026-10-22T10:30:11Z",
       "summary": "Contrôle de cohérence en échec : BALANCE_LEDGER_MISMATCH sur 1 compte"
