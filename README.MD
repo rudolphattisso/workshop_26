@@ -6,14 +6,15 @@ par une **nouvelle transaction réussie**.
 
 > Aucune donnée bancaire réelle · aucune action offensive hors de notre SI · aucun secret dans le dépôt.
 
-## Équipe
+## Équipe — groupe 2
 
 | Membre | Domaine | Dossier |
 |---|---|---|
-| ATTISSO Rudolph | Développement | `services/` |
-| BOZZANI Arman | Infrastructure | `infra/`, `docker-compose.yml` |
-| GARCIA Robin | _à compléter_ | |
-| TRAN HUU Tri Quentin | _à compléter_ | |
+| ATTISSO Rudolph | Développement (EISI) | `services/` |
+| BOZZANI Arman | Infrastructure (EISI) | `infra/`, `docker-compose.yml` |
+| TRAN HUU Tri Quentin | IA / Data | `ai/` |
+| GARCIA Robin | Cybersécurité | `security/` |
+| BREMARD Thomas | Cybersécurité | `security/` |
 
 ## Organisation du dépôt
 
