@@ -305,3 +305,31 @@ d'infrastructure (WAF, secrets, noms Compose, Alertmanager, docker-proxy) fixent
 dès qu'une `location` en déclare un (`Cache-Control`). Corrigé par un fichier inclus dans chaque `location`
 
 **À demander — Infra** : service `frontend` → `build: { context: ./services, dockerfile: web/Dockerfile }` (port 8080 et `/healthz` inchangés)
+
+## 2026-10-21 — Supervision : watchdog + dashboard (`dev/remediation-watchdog`)
+
+**Besoin** : le dashboard doit montrer au minimum l'état de santé de chaque service et l'état des connexions entre eux.
+
+**Fait**
+- `services/remediation` v0 = watchdog : 7 composants et 7 connexions mesurés toutes les 5 s (`GET /services`, flux
+  SSE `/events`, rôle `operator`), journal des 50 derniers changements, métrique `remediation_component_up`, logs
+  `component_state_changed`
+- `services/dashboard` (React + Tailwind, nginx non-root) : verdict global, carte SVG des services et connexions,
+  détail des mesures, journal ; flux lu avec `fetch()` (jeton jamais dans l'URL), reconnexion automatique
+- `/ready` : dépendances informatives (`info.auth_jwks` sur payment-api), vérifications en parallèle (2 s au total)
+- Smoke test : `GET /last` (dernier résultat, sans nouveau paiement)
+- **Révocation des jetons** : payment-api recharge le JWKS au moins toutes les 30 s (avant : seulement sur `kid` inconnu,
+  un jeton volé restait accepté après redémarrage de l'auth tant qu'aucun nouveau jeton n'était présenté)
+- Contrats `openapi-remediation` 0.3.0 (schéma `Topology`), `service-conventions` 0.4 ; ADR-DEV-0006
+
+**Tests** : common 47 · remediation 14 · smoke-test 15 · dashboard 7 Vitest ; scénarios réels dans Docker :
+- base de paiement arrêtée → base et lien API → base « en panne », API « dégradée », transaction en échec, puis tout revient ;
+- auth arrêtée → auth et lien API → auth « en panne », **API paiement reste OK** (clés en cache), puis tout revient.
+
+**Problème rencontré** : avec des vérifications de `/ready` séquentielles (2 × 2 s), le watchdog (2 s) abandonnait et
+affichait « inconnu » au lieu de « base en panne ». Corrigé : vérifications parallèles + délai du watchdog à 3,5 s.
+
+**À demander — Infra** : services `remediation` (remplace le sien ; `AUTH_JWKS_URL`, `WATCH_*`) et `dashboard`
+(réseaux `mgmt` + `monitoring`, `127.0.0.1` seulement, il doit joindre `auth` et `remediation`).
+
+**Prochain démarrage** : alertes du watchdog → playbook `SERVICE_DOWN` (restart via docker-proxy) → preuve de reprise

@@ -9,6 +9,8 @@ Microservices Python/FastAPI et interfaces React de RESILIENCE-ALPHA. Les choix 
 | `auth/` | Connexion, jetons RS256, JWKS (`contracts/openapi-payment.yaml`, tag auth ; ADR-DEV-0003) |
 | `payment-api/` | Comptes et paiements fictifs (`contracts/openapi-payment.yaml`) |
 | `web/` | Frontal client React + Tailwind (connexion, solde, payer, historique), servi par nginx non-root sur 8080 (service Compose `frontend`) |
+| `remediation/` | Moteur de remédiation, v0 = watchdog : état des services et de leurs connexions toutes les 5 s (`GET /services`, flux SSE `/events`) |
+| `dashboard/` | Dashboard de supervision React (opérateur) : carte des services et connexions, détail, journal des changements |
 | `smoke-test/` | Transaction de bout en bout à travers le WAF, toutes les 5 s et sur `GET /check` (service Compose `txprobe`) |
 
 ## Essayer l'application complète (front compris)
@@ -18,10 +20,11 @@ cd services
 docker compose -f compose.dev.yml --env-file .env --profile app up -d --build --wait
 ```
 
-Puis ouvrir **http://127.0.0.1:8080** : la passerelle `gateway` (`dev/gateway.conf`) imite le WAF de l'Infra
+Puis ouvrir **http://127.0.0.1:8080** (front client) et **http://127.0.0.1:8090** (dashboard, compte `operator`).
+Le front passe par la passerelle `gateway` (`dev/gateway.conf`), qui imite le WAF de l'Infra
 (`/api/auth*` → auth, `/api/payments*` et `/api/accounts*` → payment-api, le reste → web). Identifiants : `alice`,
 `bob`, `cafe-demo` avec `DEMO_CLIENT_PASSWORD` de `.env`. Swagger : ports 8001 (auth), 8002 (payment-api),
-8003 (smoke-test). Arrêt : `docker compose -f compose.dev.yml --profile app down`.
+8003 (smoke-test), 8004 (remediation). Arrêt : `docker compose -f compose.dev.yml --profile app down`.
 
 Front seul avec rechargement à chaud : `cd web && npm install && npm run dev` (relaie `/api` vers la passerelle).
 

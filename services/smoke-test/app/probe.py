@@ -74,15 +74,26 @@ class TransactionProbe:
         self._transport = transport  # injecté par les tests ; None = vrai réseau
         # Une transaction à la fois : la boucle de fond et /check ne se chevauchent pas.
         self._lock = threading.Lock()
+        self._last: dict | None = None
+        self._last_at: float | None = None
 
     def run(self) -> dict:
         with self._lock:
             trace_id = uuid.uuid4().hex
             token = trace_id_var.set(trace_id)  # les logs de la transaction portent son trace_id
             try:
-                return self._run(trace_id)
+                result = self._run(trace_id)
             finally:
                 trace_id_var.reset(token)
+            self._last, self._last_at = result, time.monotonic()
+            return result
+
+    def last(self) -> dict:
+        """Dernier résultat, sans nouvelle transaction (supervision). `age_s` est calculé ici, pas par l'appelant :
+        aucun écart d'horloge entre conteneurs ne peut fausser l'âge."""
+        if self._last is None:
+            return {"ok": None, "age_s": None}
+        return {**self._last, "age_s": round(time.monotonic() - self._last_at, 1)}
 
     def _run(self, trace_id: str) -> dict:
         start = time.perf_counter()

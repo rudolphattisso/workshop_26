@@ -4,9 +4,13 @@ Le service d'auth signe avec sa clé privée ; les autres services vérifient av
 JWKS. Aucun secret n'est partagé : compromettre payment-api ne permet pas de fabriquer des jetons.
 
 Résilience : les clés publiques sont gardées en mémoire. Si le service d'auth tombe, les jetons déjà
-émis restent vérifiables. On ne recontacte l'auth que pour un `kid` inconnu (nouvelle clé après un
-redémarrage ou une rotation), au plus une fois toutes les quelques secondes pour qu'un attaquant
-n'en fasse pas un levier de saturation.
+émis restent vérifiables. On recontacte l'auth pour un `kid` inconnu (nouvelle clé après un redémarrage ou
+une rotation), au plus une fois toutes les quelques secondes pour qu'un attaquant n'en fasse pas un levier
+de saturation.
+
+Révocation : on recharge aussi les clés dès que le cache a plus de `max_age` secondes (30 s), même si
+le `kid` est connu. Sans cela, après un redémarrage de l'auth (nouvelle clé, ADR-DEV-0003), un jeton
+volé resterait accepté tant qu'aucun jeton signé par la nouvelle clé n'a été présenté.
 """
 
 import json
@@ -87,25 +91,31 @@ class JwksKeyStore:
         url: str,
         timeout: float = 2.0,
         min_refresh_interval: float = 5.0,
+        max_age: float = 30.0,
         fetch: Callable[[], dict] | None = None,
     ):
         self._fetch = fetch or (lambda: _fetch_json(url, timeout))
         self._min_refresh_interval = min_refresh_interval
+        self._max_age = max_age
         self._keys: dict[str, Any] = {}
         self._last_refresh = float("-inf")
         self._lock = threading.Lock()
 
     def get_key(self, kid: str) -> Any:
-        if kid in self._keys:
+        if kid in self._keys and not self._stale():
             return self._keys[kid]
         with self._lock:
-            if kid not in self._keys and time.monotonic() - self._last_refresh >= self._min_refresh_interval:
+            since_refresh = time.monotonic() - self._last_refresh
+            if (kid not in self._keys or self._stale()) and since_refresh >= self._min_refresh_interval:
                 self._refresh()
         if kid in self._keys:
             return self._keys[kid]
         if not self._keys:
             raise KeysUnavailable()
         raise InvalidToken("kid inconnu")
+
+    def _stale(self) -> bool:
+        return time.monotonic() - self._last_refresh >= self._max_age
 
     def _refresh(self) -> None:
         self._last_refresh = time.monotonic()

@@ -121,6 +121,24 @@ def test_new_key_is_fetched_and_removed_key_is_dropped():
         store.get_key("k1")
 
 
+def test_known_kid_is_revoked_once_the_cache_is_too_old():
+    """Auth redémarrée (nouvelle clé) : l'ancien jeton est refusé dès que le cache expire, sans attendre un nouveau kid."""
+    fake = FakeJwks(jwk(KEY, "k1"))
+    store = JwksKeyStore("unused", fetch=fake, min_refresh_interval=0, max_age=0)
+    store.get_key("k1")
+    fake.keys = [jwk(OTHER_KEY, "k2")]
+    with pytest.raises(InvalidToken):
+        store.get_key("k1")
+
+
+def test_fresh_cache_is_not_refetched():
+    fake = FakeJwks(jwk(KEY, "k1"))
+    store = JwksKeyStore("unused", fetch=fake, max_age=30)
+    for _ in range(10):
+        store.get_key("k1")
+    assert fake.calls == 1
+
+
 def test_unknown_kids_cannot_flood_the_auth_service():
     fake = FakeJwks(jwk(KEY, "k1"))
     store = JwksKeyStore("unused", fetch=fake, min_refresh_interval=60)
