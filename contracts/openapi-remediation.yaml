@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: RESILIENCE-ALPHA — Moteur de remédiation
-  version: 0.2.0
+  version: 0.3.0
   description: |
     Contrat du moteur de remédiation automatique (`services/remediation`).
     Producteur : Dev. Consommateurs : IA (envoi d'alertes), Infra (Alertmanager), Cyber (WAF / SIEM),
@@ -29,9 +29,12 @@ info:
       même `target` qu'un incident ouvert ou résolu depuis moins de 120 s, est **rattachée** à cet incident.
       Elle ne déclenche pas de nouvelle action, ce qui évite les remédiations en boucle.
     - **Chronomètre** : `time_to_recover_seconds` = `resolved_at` − `detected_at` de la première alerte.
-    - **Surveillance intégrée (watchdog)** : le moteur sonde lui-même `/health` et `/ready` des services toutes
-      les 5 s, et la cohérence des données toutes les 30 s. Il crée ses propres alertes (`source: watchdog`).
-      C'est un filet de sécurité si la chaîne ML / Prometheus ne détecte pas l'incident.
+    - **Surveillance intégrée (watchdog)** : le moteur mesure lui-même, toutes les 5 s, l'état de chaque composant
+      et de chaque **connexion** entre composants (schéma `Topology`, ADR-DEV-0006) :
+      `/health` et `/ready` des services, `checks.database` et `info.auth_jwks` de leur `/ready`, les appels à
+      travers le WAF, et la dernière transaction du smoke test (`GET /last`, sans en déclencher une).
+      Il vérifiera aussi la cohérence des données toutes les 30 s et créera ses propres alertes
+      (`source: watchdog`) : c'est un filet de sécurité si la chaîne ML / Prometheus ne détecte pas l'incident.
 
     ## Table des playbooks (v1)
 
@@ -194,7 +197,8 @@ paths:
   /services:
     get:
       tags: [incidents]
-      summary: État des composants surveillés (dernier passage du watchdog)
+      summary: État des composants et des connexions (dernier passage du watchdog)
+      description: Réponse 503 tant que le premier passage du watchdog n'est pas terminé (quelques secondes).
       security:
         - operatorJwt: []
       responses:
@@ -202,9 +206,7 @@ paths:
           description: États
           content:
             application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/ServiceStatus' }
+              schema: { $ref: '#/components/schemas/Topology' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
@@ -241,7 +243,7 @@ paths:
         | `event` | `data` (JSON) | Quand |
         |---|---|---|
         | `incident` | `Incident` complet | création, chaque changement d'état ou nouvelle étape |
-        | `services` | `ServiceStatus[]` | à chaque changement d'état d'un composant |
+        | `services` | `Topology` | à la connexion, puis à chaque passage du watchdog (toutes les 5 s) |
         | `heartbeat` | `{"at": "<date-time>"}` | toutes les 15 s (garde la connexion ouverte à travers les proxys) |
 
         `EventSource` ne permet pas d'envoyer l'en-tête `Authorization`. Le dashboard lit donc le flux avec
@@ -286,7 +288,8 @@ paths:
         En plus des métriques communes :
         `remediation_incidents_total{incident_type,outcome}` (outcome = resolved | escalated),
         `remediation_actions_total{action,result}`, `remediation_time_to_recover_seconds` (histogramme),
-        `remediation_alerts_total{source,result}` (result = accepted | deduplicated | rejected).
+        `remediation_alerts_total{source,result}` (result = accepted | deduplicated | rejected),
+        `remediation_component_up{kind,id}` (1 si le composant ou la connexion est opérationnel, 0 sinon).
       security: []
       responses:
         '200':
@@ -403,14 +406,57 @@ components:
         consistent: { type: boolean }
         checked_at: { type: string, format: date-time }
 
-    ServiceStatus:
+    ComponentState:
+      type: string
+      description: |
+        up = opérationnel ; degraded = vivant mais pas prêt (/health OK, /ready en échec : ne pas le redémarrer,
+        traiter sa dépendance) ; down = en panne ; unknown = impossible à mesurer (ex. le service qui le
+        rapporte est lui-même injoignable). On n'affiche jamais « en panne » sans l'avoir mesuré.
+      enum: [up, degraded, down, unknown]
+
+    Topology:
       type: object
-      required: [name, health, ready, checked_at]
+      required: [checked_at, nodes, links, changes]
       properties:
-        name: { type: string, example: payment-api }
-        health: { type: string, enum: [up, down] }
-        ready: { type: string, enum: [up, down, unknown] }
         checked_at: { type: string, format: date-time }
+        nodes:
+          type: array
+          description: "Composants : bunkerweb, frontend, auth, payment-api, auth-db, payment-db, smoke-test"
+          items:
+            type: object
+            required: [name, label, role, state, detail]
+            properties:
+              name: { type: string, example: payment-api, description: Service Compose (cible des remédiations) }
+              label: { type: string, example: API paiement }
+              role: { type: string, enum: [edge, app, data, probe] }
+              state: { $ref: '#/components/schemas/ComponentState' }
+              detail: { type: string, example: 'vivant mais pas prêt (/ready : HTTP 503)' }
+        links:
+          type: array
+          description: Connexions, de l'appelant vers l'appelé (ex. payment-api → payment-db)
+          items:
+            type: object
+            required: [source, target, label, state, detail]
+            properties:
+              source: { type: string, example: payment-api }
+              target: { type: string, example: payment-db }
+              label: { type: string, example: SQL }
+              state: { $ref: '#/components/schemas/ComponentState' }
+              detail: { type: string, example: connexion en échec }
+        changes:
+          type: array
+          description: 50 derniers changements d'état, les plus récents d'abord
+          items:
+            type: object
+            required: [at, kind, id, label, from, to, detail]
+            properties:
+              at: { type: string, format: date-time }
+              kind: { type: string, enum: [node, link] }
+              id: { type: string, example: payment-api->payment-db }
+              label: { type: string, example: API paiement → Base paiement }
+              from: { $ref: '#/components/schemas/ComponentState' }
+              to: { $ref: '#/components/schemas/ComponentState' }
+              detail: { type: string }
 
     Playbook:
       type: object

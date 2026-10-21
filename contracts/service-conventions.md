@@ -1,7 +1,7 @@
 # Conventions de service
 
 > Producteur : Dev · Consommateurs : Infra (scraping, Loki, healthchecks), IA (features), Cyber (SIEM).
-> Implémentées par le socle commun `services/common` (ADR-DEV-0001). Version 0.3 — 2026-10-20.
+> Implémentées par le socle commun `services/common` (ADR-DEV-0001). Version 0.4 — 2026-10-21.
 
 ## Services concernés
 
@@ -13,13 +13,17 @@ Services Python du domaine Dev : `auth`, `payment-api`, `remediation`, `smoke-te
 | Endpoint | Sens | Réponse |
 |---|---|---|
 | `GET /health` | Le processus est vivant | `200 {"status":"ok","service":"<nom>"}` |
-| `GET /ready` | Le service peut servir (dépendances joignables) | `200` si tout est OK, `503` sinon, avec `{"status","service","checks":{"database":"ok"\|"down"}}` |
+| `GET /ready` | Le service peut servir (dépendances joignables) | `200` si tout est OK, `503` sinon, avec `{"status","service","checks":{"database":"ok"\|"down"}}` et, si le service en a, `"info":{…}` |
 | `GET /metrics` | Métriques Prometheus (format texte) | `200 text/plain` |
 
 - Le **healthcheck Docker** utilise `/health`. Un échec signifie qu'il faut redémarrer le conteneur.
 - Un échec de `/ready` signifie que le service tourne mais qu'une dépendance est en panne. Redémarrer ce service
   ne règle rien ; il faut traiter la dépendance.
-- `/ready` répond en **2 s maximum** même si une dépendance ne répond plus (timeout ⇒ `down`).
+- `/ready` répond en **2 s maximum** même si une dépendance ne répond plus (timeout ⇒ `down`) : les vérifications
+  tournent **en parallèle**, la limite vaut pour l'ensemble.
+- `info` : dépendances **non bloquantes**, rapportées pour la supervision sans rendre le service « pas prêt ».
+  Ex. `payment-api` → `"info":{"auth_jwks":"ok"}` : il vérifie les jetons avec les clés en cache même si l'auth
+  est tombée. `info` n'est pas servi sous le préfixe public (ne révèle pas nos dépendances à travers le WAF).
 - Ces sondes sont servies à la racine, sur le réseau interne. Un service publié par le WAF sert **aussi** `/health`
   et `/ready` sous son préfixe public (`/api/auth/ready`, `/api/payments/ready`) pour les sondes boîte noire de
   l'Infra. `/metrics` n'est **jamais** publié sous ce préfixe (ADR-DEV-0005).

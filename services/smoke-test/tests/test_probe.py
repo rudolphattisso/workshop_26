@@ -123,7 +123,8 @@ def client(monkeypatch):
     from app.main import app, get_probe
 
     platform = FakePlatform()
-    app.dependency_overrides[get_probe] = lambda: probe_with(platform)
+    probe = probe_with(platform)  # une seule sonde, comme get_probe (lru_cache) en production
+    app.dependency_overrides[get_probe] = lambda: probe
     with TestClient(app) as test_client:
         yield test_client, platform
     app.dependency_overrides.clear()
@@ -143,6 +144,16 @@ def test_check_returns_503_when_the_platform_is_down(client):
     response = test_client.get("/check")
     assert response.status_code == 503
     assert response.json()["ok"] is False
+
+
+def test_last_reports_without_making_a_new_transaction(client):
+    test_client, platform = client
+    assert test_client.get("/last").json() == {"ok": None, "age_s": None}
+    test_client.get("/check")
+    calls = len(platform.requests)
+    last = test_client.get("/last").json()
+    assert last["ok"] is True and last["age_s"] >= 0
+    assert len(platform.requests) == calls  # aucune requête vers la plateforme
 
 
 def test_service_exposes_probes_and_synthetic_metrics(client):

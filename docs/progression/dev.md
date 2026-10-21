@@ -305,3 +305,64 @@ d'infrastructure (WAF, secrets, noms Compose, Alertmanager, docker-proxy) fixent
 dès qu'une `location` en déclare un (`Cache-Control`). Corrigé par un fichier inclus dans chaque `location`
 
 **À demander — Infra** : service `frontend` → `build: { context: ./services, dockerfile: web/Dockerfile }` (port 8080 et `/healthz` inchangés)
+
+## 2026-10-21 — Supervision : watchdog + dashboard (`dev/remediation-watchdog`)
+
+**Besoin** : le dashboard doit montrer au minimum l'état de santé de chaque service et l'état des connexions entre eux.
+
+**Fait**
+- `services/remediation` v0 = watchdog : 7 composants et 7 connexions mesurés toutes les 5 s (`GET /services`, flux
+  SSE `/events`, rôle `operator`), journal des 50 derniers changements, métrique `remediation_component_up`, logs
+  `component_state_changed`
+- `services/dashboard` (React + Tailwind, nginx non-root) : verdict global, carte SVG des services et connexions,
+  détail des mesures, journal ; flux lu avec `fetch()` (jeton jamais dans l'URL), reconnexion automatique
+- `/ready` : dépendances informatives (`info.auth_jwks` sur payment-api), vérifications en parallèle (2 s au total)
+- Smoke test : `GET /last` (dernier résultat, sans nouveau paiement)
+- **Révocation des jetons** : payment-api recharge le JWKS au moins toutes les 30 s (avant : seulement sur `kid` inconnu,
+  un jeton volé restait accepté après redémarrage de l'auth tant qu'aucun nouveau jeton n'était présenté)
+- Contrats `openapi-remediation` 0.3.0 (schéma `Topology`), `service-conventions` 0.4 ; ADR-DEV-0006
+
+**Tests** : common 47 · remediation 14 · smoke-test 15 · dashboard 7 Vitest ; scénarios réels dans Docker :
+- base de paiement arrêtée → base et lien API → base « en panne », API « dégradée », transaction en échec, puis tout revient ;
+- auth arrêtée → auth et lien API → auth « en panne », **API paiement reste OK** (clés en cache), puis tout revient.
+
+**Problème rencontré** : avec des vérifications de `/ready` séquentielles (2 × 2 s), le watchdog (2 s) abandonnait et
+affichait « inconnu » au lieu de « base en panne ». Corrigé : vérifications parallèles + délai du watchdog à 3,5 s.
+
+**À demander — Infra** : services `remediation` (remplace le sien ; `AUTH_JWKS_URL`, `WATCH_*`) et `dashboard`
+(réseaux `mgmt` + `monitoring`, `127.0.0.1` seulement, il doit joindre `auth` et `remediation`).
+
+**Prochain démarrage** : alertes du watchdog → playbook `SERVICE_DOWN` (restart via docker-proxy) → preuve de reprise
+
+## 2026-10-21 — Popups d'alerte sur le dashboard (`dev/dashboard-alerts`)
+
+**Fait** : popup à chaque panne détectée par le watchdog, et quand ça revient.
+- Panne (rouge) : reste affichée tant qu'elle dure ; chaque élément rétabli en est retiré, la popup disparaît quand tout est revenu
+- Dégradé / plus mesurable (orange) : 15 s · Rétabli (vert) : 10 s, avec la **durée de l'interruption**
+- **Une popup par passage du watchdog**, pas par élément : une panne de base touche 5 éléments à la fois
+- Titre de l'onglet « ⚠ N en panne » ; `role="alert"` pour les lecteurs d'écran
+- Pas de popup pour l'historique d'avant l'ouverture du dashboard, ni de doublon après une reconnexion du flux
+
+**Tests** : 16 Vitest (logique des popups isolée dans `lib/alerts.js`, sans React) ; scénario validé dans un vrai
+Chrome piloté par puppeteer-core (panne de la base → popup rouge en ~5 s, retour → popup verte) puis par Rudolph
+
+**Problèmes rencontrés**
+- 5 popups empilées pour une seule panne de base → regroupement en une popup par passage du watchdog
+- Durée d'interruption fausse (« 269 s » au lieu de 5 s) pour un service seulement dégradé : elle partait d'une vieille
+  panne de l'historique. Corrigé : le début est noté dès qu'un élément quitte l'état OK (`trackOutages`)
+
+## Clôture de session — 2026-10-21
+
+**État Git** : #16 (watchdog + dashboard) et #18 (popups) mergées dans `dev/app` ; `develop` à jour jusqu'à #16
+(#18 reste à remonter `dev/app` → `develop`). Branches de travail intégrées supprimées (local + GitHub) : il reste
+`main`, `develop`, `dev/app` et `infrastructure` (Arman). `gh` installé et connecté : Claude crée les PR, Rudolph
+les merge après relecture.
+
+**Reste à faire avant le gel (jeudi 22, 17h)**
+1. Moteur de remédiation : alerte du watchdog → playbook `SERVICE_DOWN` (restart via docker-proxy) → preuve de reprise
+   (`/ready` + `/check` + cohérence) → incidents sur le dashboard
+2. Envoyer à Arman `private/message-arman-infra.md` (restauration automatique, DNS du WAF, intégration de `web`,
+   `remediation`, `dashboard`)
+3. Répéter la démo complète plusieurs fois
+
+**Prochain démarrage** : remonter `dev/app` → `develop` (popups), puis brancher le playbook `SERVICE_DOWN` sur le watchdog
