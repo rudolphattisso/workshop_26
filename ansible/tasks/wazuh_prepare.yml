@@ -1,0 +1,7 @@
+# Wazuh (manager + agent) : aucune préparation nécessaire.
+# Plus d'indexer ni de dashboard Wazuh : pas de certificats TLS, pas de mots de passe internes.
+# Les alertes sont envoyées en syslog JSON vers Alloy -> Loki et visualisées dans Grafana.
+# (Le mot de passe de l'API du manager est celui par défaut de l'image ; l'API n'est jamais publiée.)
+- name: "Wazuh | Rien à préparer (visualisation dans Grafana)"
+  ansible.builtin.debug:
+    msg: "Wazuh : manager + agent ; alertes -> Loki -> Grafana"

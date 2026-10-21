@@ -1,0 +1,117 @@
+# Règles d'alerte Prometheus.
+# Convention de labels lue par le moteur de remédiation :
+#   remediation: restart | none     -> action demandée
+#   target:      <service compose>  -> cible (contrôlée par liste blanche côté moteur)
+groups:
+  - name: availability
+    rules:
+      # BunkerWeb est le point d'entrée unique : s'il tombe, TOUTES les sondes qui passent
+      # par lui échouent en même temps. On distingue ce cas d'une panne d'un seul back-end.
+      - alert: WafDown
+        expr: count(probe_success{service=~"frontend|auth|payment-api"} == 0) == count(probe_success{service=~"frontend|auth|payment-api"})
+        for: 10s
+        labels: { severity: critical, remediation: restart, target: bunkerweb }
+        annotations:
+          summary: "Le WAF BunkerWeb (point d'entrée unique) ne répond plus"
+
+      # Les 3 sondes passent par le WAF : si le WAF tombe, elles échouent TOUTES. Une panne de
+      # service précis n'est donc retenue que si au moins une autre sonde passe encore (WAF vivant),
+      # sinon on redémarrerait un service sain au lieu du WAF (cause racine -> WafDown).
+      - alert: PaymentApiUnavailable
+        expr: probe_success{service="payment-api"} == 0 and on() (max(probe_success{service=~"auth|frontend"}) == 1)
+        for: 10s
+        labels: { severity: critical, remediation: restart, target: payment-api }
+        annotations:
+          summary: "L'API de paiement ne répond plus via le WAF ({{ $labels.instance }})"
+
+      - alert: AuthUnavailable
+        expr: probe_success{service="auth"} == 0 and on() (max(probe_success{service=~"payment-api|frontend"}) == 1)
+        for: 10s
+        labels: { severity: critical, remediation: restart, target: auth }
+        annotations:
+          summary: "Le service d'authentification ne répond plus via le WAF"
+
+      - alert: FrontendUnavailable
+        expr: probe_success{service="frontend"} == 0 and on() (max(probe_success{service=~"auth|payment-api"}) == 1)
+        for: 10s
+        labels: { severity: major, remediation: restart, target: frontend }
+        annotations:
+          summary: "Le frontal web ne répond plus via le WAF"
+
+      # Vault : indisponible (aucune réponse) -> redémarrage ; le sidecar le redescelle ensuite seul.
+      - alert: VaultDown
+        expr: probe_success{service="vault"} == 0 and probe_http_status_code{service="vault"} != 503
+        for: 10s
+        labels: { severity: critical, remediation: restart, target: vault }
+        annotations:
+          summary: "HashiCorp Vault (source des secrets) ne répond plus"
+
+      - alert: VaultSealed
+        expr: probe_http_status_code{service="vault"} == 503
+        for: 30s
+        labels: { severity: major, remediation: none }
+        annotations:
+          summary: "Vault est scellé depuis 30 s : le sidecar vault-unsealer aurait dû le desceller"
+
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 10s
+        labels: { severity: critical, remediation: restart, target: postgres }
+        annotations:
+          summary: "PostgreSQL injoignable par l'exporter"
+
+      - alert: SyntheticTransactionFailing
+        expr: synthetic_transaction_success == 0
+        for: 20s
+        labels: { severity: critical, remediation: none }
+        annotations:
+          summary: "Le parcours métier (login -> paiement) échoue depuis 20 s"
+          description: "Indicateur métier : la plateforme n'est pas utilisable même si les conteneurs tournent."
+
+      - alert: TargetDown
+        expr: up == 0
+        for: 30s
+        labels: { severity: warning, remediation: none }
+        annotations:
+          summary: "Cible de scrape {{ $labels.job }}/{{ $labels.instance }} injoignable"
+
+  - name: behaviour
+    rules:
+      - alert: PaymentApiHighErrorRate
+        expr: |
+          sum(rate(http_requests_total{service="payment-api",status=~"5.."}[1m]))
+            / clamp_min(sum(rate(http_requests_total{service="payment-api"}[1m])), 0.001) > 0.2
+        for: 30s
+        labels: { severity: critical, remediation: restart, target: payment-api }
+        annotations:
+          summary: "Plus de 20 % d'erreurs 5xx sur l'API de paiement"
+
+      - alert: PaymentApiHighLatency
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{service="payment-api"}[1m]))) > 1
+        for: 1m
+        labels: { severity: warning, remediation: none }
+        annotations:
+          summary: "Latence p95 de l'API de paiement > 1 s"
+
+      # (RequestFlood / DDoS : détecté côté journaux par le ruler Loki — voir
+      #  infra/loki/rules/fake/security.yml — car l'export Prometheus du WAF est une option PRO.)
+
+      - alert: ContainerMemoryPressure
+        expr: |
+          max by (service) (container_memory_working_set_bytes{service!=""}
+            / (container_spec_memory_limit_bytes{service!=""} > 0)) > 0.9
+        for: 1m
+        labels: { severity: major, remediation: restart, target: "{{ $labels.service }}" }
+        annotations:
+          summary: "{{ $labels.service }} utilise plus de 90 % de sa limite mémoire"
+
+  - name: aiops
+    rules:
+      # Alimentée par le détecteur ML du pôle IA (métrique aiops_anomaly_score entre 0 et 1).
+      - alert: AnomalyDetected
+        expr: max by (service) (aiops_anomaly_score) > 0.8
+        for: 15s
+        labels: { severity: critical, remediation: restart, target: "{{ $labels.service }}" }
+        annotations:
+          summary: "Anomalie détectée par le modèle ML sur {{ $labels.service }} (score {{ $value }})"

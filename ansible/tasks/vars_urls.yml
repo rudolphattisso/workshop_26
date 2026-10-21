@@ -1,0 +1,10 @@
+- name: "URLs | Adresses des services (runner conteneurisé ou exécution native)"
+  ansible.builtin.set_fact:
+    in_runner: "{{ lookup('env', 'OPS_RUNNER') == '1' }}"
+    waf_url: "{{ 'http://bunkerweb:8080' if lookup('env', 'OPS_RUNNER') == '1' else 'http://127.0.0.1:' ~ public_port }}"
+    prom_url: "{{ 'http://prometheus:9090' if lookup('env', 'OPS_RUNNER') == '1' else 'http://127.0.0.1:9090' }}"
+    am_url: "{{ 'http://alertmanager:9093' if lookup('env', 'OPS_RUNNER') == '1' else 'http://127.0.0.1:9093' }}"
+    grafana_url: "{{ 'http://grafana:3000' if lookup('env', 'OPS_RUNNER') == '1' else 'http://127.0.0.1:3000' }}"
+    remediation_url: "{{ 'http://remediation:8000' if lookup('env', 'OPS_RUNNER') == '1' else 'http://127.0.0.1:18090' }}"
+  vars:
+    public_port: "{{ lookup('ansible.builtin.ini', 'PUBLIC_HTTP_PORT', file=project_dir ~ '/.env', type='properties', default='80') }}"

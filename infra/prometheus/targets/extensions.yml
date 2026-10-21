@@ -1,0 +1,7 @@
+# Cibles ajoutées par les autres pôles, prises en compte sans redémarrer Prometheus.
+# Exemple pour le détecteur d'anomalies ML (pôle IA) — il doit exposer la métrique
+# aiops_anomaly_score{service="<service>"} entre 0 et 1 (voir docs/INTEGRATION.md) :
+#
+# - targets: ["ml-detector:8000"]
+#   labels: { service: ml-detector, tier: aiops }
+[]

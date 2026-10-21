@@ -1,0 +1,90 @@
+# Recette / chaos engineering : on provoque une panne et on MESURE la reprise automatique.
+# Ansible ne répare rien ici : il observe la chaîne Prometheus -> Alertmanager -> remédiation.
+#
+#   scripts/ops.ps1 chaos                                   -> arrêt de payment-api
+#   scripts/ops.ps1 chaos -e target=auth -e fault=kill
+#   fault : stop (arrêt propre) | kill (SIGKILL)
+- name: Injecter une panne et mesurer la reprise
+  hosts: pc-hote
+  gather_facts: false
+  vars:
+    target: payment-api
+    fault: stop
+    timeout_s: 180
+  tasks:
+    - ansible.builtin.import_tasks: ../tasks/attach_controller.yml
+    - ansible.builtin.import_tasks: ../tasks/vars_urls.yml
+
+    - name: "Chaos | Cible autorisée"
+      ansible.builtin.assert:
+        that:
+          - target in business_services
+          - fault in ['stop', 'kill']
+
+    - name: "Chaos | État initial : la transaction synthétique doit être OK"
+      ansible.builtin.uri:
+        url: "{{ prom_url }}/api/v1/query?query=synthetic_transaction_success"
+      register: before
+      retries: 12
+      delay: 5
+      until: (before.json.data.result | length > 0) and before.json.data.result[0].value[1] == '1'
+
+    - name: "Chaos | T0"
+      ansible.builtin.set_fact: { t0: "{{ now().timestamp() }}" }
+
+    - name: "Chaos | Injection de la panne ({{ fault }} {{ target }})"
+      ansible.builtin.command: "{{ compose }} {{ fault }} {{ target }}"
+      changed_when: true
+
+    - name: "Chaos | Attente de la détection (alerte firing)"
+      ansible.builtin.uri:
+        url: "{{ prom_url }}/api/v1/query?query={{ ('ALERTS{alertstate=\"firing\",severity=~\"critical|major\"}') | urlencode }}"
+      register: alerts
+      retries: "{{ (timeout_s / 3) | int }}"
+      delay: 3
+      until: alerts.json.data.result | length > 0
+
+    - name: "Chaos | T détection"
+      ansible.builtin.set_fact:
+        t_detect: "{{ now().timestamp() }}"
+        fired: "{{ alerts.json.data.result | map(attribute='metric.alertname') | unique | list }}"
+
+    - name: "Chaos | Attente de la reprise vérifiée par le moteur de remédiation"
+      ansible.builtin.uri:
+        url: "{{ remediation_url }}/events?limit=50"
+      register: events
+      retries: "{{ (timeout_s / 3) | int }}"
+      delay: 3
+      until: >-
+        events.json | selectattr('kind', 'eq', 'remediation_succeeded')
+        | selectattr('ts', 'gt', t0 | float) | list | length > 0
+
+    - name: "Chaos | T reprise"
+      ansible.builtin.set_fact:
+        t_recover: "{{ now().timestamp() }}"
+        success_event: "{{ events.json | selectattr('kind', 'eq', 'remediation_succeeded') | selectattr('ts', 'gt', t0 | float) | first }}"
+
+    - name: "Chaos | Contre-vérification : nouvelle transaction de bout en bout"
+      ansible.builtin.import_tasks: ../tasks/verify.yml
+
+    - name: "Chaos | Rapport"
+      ansible.builtin.set_fact:
+        report:
+          date_utc: "{{ '%Y-%m-%dT%H:%M:%SZ' | strftime(t0 | float | int, utc=true) }}"
+          target: "{{ target }}"
+          fault: "{{ fault }}"
+          alerts_fired: "{{ fired }}"
+          time_to_detect_s: "{{ (t_detect | float - t0 | float) | round(1) }}"
+          time_to_recover_s: "{{ (t_recover | float - t0 | float) | round(1) }}"
+          remediation_action: "{{ success_event.action }}"
+          remediation_target: "{{ success_event.target }}"
+          verification_tx: "{{ success_event.verification_tx }}"
+
+    - name: "Chaos | Sauvegarde du rapport dans reports/"
+      ansible.builtin.copy:
+        dest: "{{ project_dir }}/reports/chaos-{{ target }}-{{ fault }}-{{ '%Y%m%dT%H%M%SZ' | strftime(t0 | float | int, utc=true) }}.json"
+        content: "{{ report | to_nice_json }}"
+        mode: "0644"
+
+    - name: "Chaos | Résultat"
+      ansible.builtin.debug: { var: report }

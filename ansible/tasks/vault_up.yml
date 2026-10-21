@@ -1,0 +1,8 @@
+# HashiCorp Vault démarre EN PREMIER : il ne dépend d'aucun Docker secret, et les autres
+# tâches (secrets.yml) y lisent / y écrivent les secrets de la plateforme.
+- name: "Vault | Démarrer Vault et son sidecar de descellement (attente : descellé + configuré)"
+  vars:
+    compose_up_args: "-d --wait --wait-timeout 180 vault vault-unsealer"
+    port_env_map: >-
+      {{ { lookup('ansible.builtin.ini', 'VAULT_PORT', file=project_dir ~ '/.env', type='properties', default='18200'): 'VAULT_PORT' } }}
+  ansible.builtin.include_tasks: compose_up_resilient.yml

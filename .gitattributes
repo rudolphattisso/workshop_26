@@ -1,0 +1,6 @@
+# Fichiers exécutés dans des conteneurs Linux : fins de ligne LF obligatoires,
+# même si le dépôt est cloné sous Windows (core.autocrlf).
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.pdf binary
+*.png binary
