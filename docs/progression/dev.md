@@ -282,3 +282,26 @@ d'infrastructure (WAF, secrets, noms Compose, Alertmanager, docker-proxy) fixent
   (`resolver 127.0.0.11 valid=5s`), reprise en ~7 s. À vérifier sur BunkerWeb ; sinon, IP fixes sur le réseau `app`
 
 **Prochain démarrage** : moteur de remédiation v0 (watchdog + playbook `SERVICE_DOWN` + vérification par `/check`)
+
+## 2026-10-21 — Frontal web (`dev/web`, empilée sur `dev/smoke-test`)
+
+**Fait**
+- `services/web` : Vite + React 18 + Tailwind 3 (ADR-DEV-0001) — connexion, solde, paiement vers des bénéficiaires
+  fictifs, historique (opérations entrantes/sortantes, refus)
+- Image `nginx-unprivileged` : port 8080, `GET /healthz`, lecture seule (contrat du `frontend` de l'Infra), CSP stricte
+- `compose.dev.yml`, profil `app` : toute l'application en local derrière une passerelle nginx qui imite le WAF
+  (`dev/gateway.conf`, résolution DNS dynamique)
+
+**Décisions techniques**
+- Jeton JWT **en mémoire uniquement** (pas de localStorage, illisible par un script injecté) ; recharger = se reconnecter
+- Même origine pour le front et l'API (`/api/...` via le WAF) : pas de CORS à ouvrir
+- Montants saisis convertis en centimes par traitement de texte, jamais en virgule flottante
+- Clé d'idempotence conservée tant que le paiement n'a pas de réponse définitive : « Réessayer » ne débite jamais deux fois
+- Toute réponse 401 (jeton expiré ou révoqué par un redémarrage de l'auth) ramène à la connexion
+
+**Tests** : 16 tests Vitest (conversion et affichage des montants), lancés aussi pendant le build Docker
+
+**Problème rencontré** : les en-têtes de sécurité disparaissaient — nginx n'hérite pas des `add_header` du bloc `server`
+dès qu'une `location` en déclare un (`Cache-Control`). Corrigé par un fichier inclus dans chaque `location`
+
+**À demander — Infra** : service `frontend` → `build: { context: ./services, dockerfile: web/Dockerfile }` (port 8080 et `/healthz` inchangés)

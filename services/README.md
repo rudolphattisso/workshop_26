@@ -8,7 +8,22 @@ Microservices Python/FastAPI et interfaces React de RESILIENCE-ALPHA. Les choix 
 | `common/` | Socle partagé : logs JSON, trace_id, `/health` `/ready` `/metrics`, erreurs RFC 9457, vérification JWT |
 | `auth/` | Connexion, jetons RS256, JWKS (`contracts/openapi-payment.yaml`, tag auth ; ADR-DEV-0003) |
 | `payment-api/` | Comptes et paiements fictifs (`contracts/openapi-payment.yaml`) |
+| `web/` | Frontal client React + Tailwind (connexion, solde, payer, historique), servi par nginx non-root sur 8080 (service Compose `frontend`) |
 | `smoke-test/` | Transaction de bout en bout à travers le WAF, toutes les 5 s et sur `GET /check` (service Compose `txprobe`) |
+
+## Essayer l'application complète (front compris)
+
+```bash
+cd services
+docker compose -f compose.dev.yml --env-file .env --profile app up -d --build --wait
+```
+
+Puis ouvrir **http://127.0.0.1:8080** : la passerelle `gateway` (`dev/gateway.conf`) imite le WAF de l'Infra
+(`/api/auth*` → auth, `/api/payments*` et `/api/accounts*` → payment-api, le reste → web). Identifiants : `alice`,
+`bob`, `cafe-demo` avec `DEMO_CLIENT_PASSWORD` de `.env`. Swagger : ports 8001 (auth), 8002 (payment-api),
+8003 (smoke-test). Arrêt : `docker compose -f compose.dev.yml --profile app down`.
+
+Front seul avec rechargement à chaud : `cd web && npm install && npm run dev` (relaie `/api` vers la passerelle).
 
 ## Développer en local (Windows, Git Bash)
 
