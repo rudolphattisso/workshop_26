@@ -1,15 +1,17 @@
 # Alertmanager — regroupe/dédoublonne les alertes et les transmet au moteur de remédiation.
+# Cible "auto-recovery" (pas "remediation") : ce dernier nom est désormais le service de supervision
+# du pôle Dev (watchdog + API du dashboard, voir docker-compose.yml), qui n'agit pas encore sur alerte.
 route:
-  receiver: remediation
+  receiver: auto-recovery
   group_by: [alertname, target]
   group_wait: 5s          # court pour la démo : la décision doit être rapide
   group_interval: 30s
   repeat_interval: 5m
 
 receivers:
-  - name: remediation
+  - name: auto-recovery
     webhook_configs:
-      - url: http://remediation:8000/webhook/alertmanager
+      - url: http://auto-recovery:8000/webhook/alertmanager
         send_resolved: true
         http_config:
           authorization:
