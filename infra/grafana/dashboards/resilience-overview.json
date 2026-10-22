@@ -1297,7 +1297,7 @@
         },
         "enable": true,
         "iconColor": "orange",
-        "expr": "{service=\"ml-detector\"} |= \"\\\"event\\\": \\\"escalade\\\"\" | json",
+        "expr": "{service=\"ml-detector\"} |= \"\\\"event\\\": \\\"escalade\\\"\" | json | keep trigger, gravite",
         "titleFormat": "Escalade ({{trigger}})",
         "textFormat": "gravité {{gravite}}",
         "filter": {
@@ -1315,7 +1315,7 @@
         },
         "enable": true,
         "iconColor": "red",
-        "expr": "{service=\"ml-detector\"} |= \"\\\"event\\\": \\\"rapport\\\"\" | json",
+        "expr": "{service=\"ml-detector\"} |= \"\\\"event\\\": \\\"rapport\\\"\" | json | keep verdict, type, popup",
         "titleFormat": "Rapport IA · {{verdict}} · {{type}}",
         "textFormat": "{{popup}}",
         "filter": {
