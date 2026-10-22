@@ -14,7 +14,7 @@ PC INFRA (compose resilience)                                PC IA (compose ai-n
             │                               │  réseau "ia"     jeton       │         ChromaDB (RAG)
             │                               │                              └─> reports/ (règles à
  Prometheus <──── /metrics :8000 ───────────┘                                  copier-coller, /reports)
- Grafana  <── tableau « Module IA SOC » (Prometheus + Loki)
+ Grafana  <── vue d'ensemble + panneau « Module IA » (Prometheus + Loki)
 ```
 
 - **ml-detector** tourne sur le PC infra, dans votre compose. Toutes les 10 s, il lit les accès
@@ -58,7 +58,7 @@ détecteur y est branché, et la sortie peut être restreinte au seul PC IA (voi
       LOKI_WAZUH_QUERY: '{service="wazuh"}'
       LOKI_REMEDIATION_QUERY: '{service="auto-recovery"}'   # actions du moteur, en lecture seule
       LLM_GATEWAY_URL: ${LLM_GATEWAY_URL:-}       # vide : détection seule, sans appel au LLM
-      REPORTS_URL: ${REPORTS_URL:-}               # lien « Ouvrir » du tableau Grafana
+      REPORTS_URL: ${REPORTS_URL:-}               # lien « Rapport complet » dans l'infobulle Grafana
       DETECTOR_CYCLE_S: "10"
       # Seuils estimés : à remplacer par les valeurs mesurées (voir « Calibrage » plus bas).
       DETECTOR_INGEST_DELAY_S: "5"      # retard d'ingestion de Loki
@@ -159,14 +159,13 @@ La cible est prise en compte sans redémarrer Prometheus. Si le détecteur tombe
 
 ## 4. Grafana
 
-Le tableau est `infra/grafana/dashboards/soc-ia-dashboard.json` (provisionné automatiquement). Il
-utilise vos UID de sources fixes (`prometheus`, `loki`) et apparaît dans le dossier
-Resilience-Alpha. Il contient :
-
-- la gravité en continu (0-100) ;
-- les compteurs d'escalades, de rapports et d'erreurs ;
-- les annotations « Escalade » et « Rapport » sur la courbe ;
-- le tableau des incidents (verdict, type, règles proposées, lien vers le rapport complet).
+Le module n'ajoute pas de tableau de bord séparé : il **enrichit votre vue d'ensemble**
+(`infra/grafana/dashboards/resilience-overview.json`) d'un panneau en 2e ligne, « Module IA —
+gravité détectée (0-100) ». Deux annotations, limitées à ce panneau (`filter.ids`), marquent la
+courbe à chaque escalade et à chaque rapport ; l'infobulle d'un rapport affiche le diagnostic,
+l'impact, les actions conseillées et les règles proposées (champ `popup` du journal du détecteur).
+Le panneau « Score d'anomalie ML (pôle IA) », qui attendait `aiops_anomaly_score` que nous ne
+publions pas (ADR-AI-0001), a été retiré de cette vue.
 
 ## 5. PC IA
 

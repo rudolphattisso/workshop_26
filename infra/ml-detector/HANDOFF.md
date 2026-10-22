@@ -259,3 +259,10 @@ Lu dans `git show infrastructure:...` (jamais modifiée par nous). **Document po
 - Test de panne (`ops chaos -e target=bunkerweb -e fault=kill`, détection 25 s, reprise 64 s) : perte de visibilité (sondes absentes 22 s) -> rapport, puis symptôme (30 alarmes Wazuh) -> rapport avec la chronologie d'auto-recovery ; « visibilité rétablie » au retour des sondes.
 - Corrigé pendant ce lancement : `LLM_GATEWAY_URL=   # commentaire` (valeur vide + commentaire) pris pour l'URL par Compose -> fil du signal de vie tué ; client et démarrage durcis, exceptions de fil en JSON ; motif « autres requêtes » compté sur le cycle et non sur la fenêtre.
 - Bug de develop (non corrigé, à signaler à l'infra) : sur un poste neuf, `ops deploy` démarre Vault avant `bunkerweb_prepare` -> BW_API_TOKEN / BW_UI_PASSWORD manquants, échec.
+
+## Tableau de bord fusionné dans la vue d'ensemble (2026-10-22)
+- Notre dashboard séparé (`soc-ia-dashboard.json`) est **supprimé**. Le panneau de gravité est déplacé dans `infra/grafana/dashboards/resilience-overview.json` (2e ligne, au-dessus de « Transaction synthétique »/« Sondes », id 30).
+- Le panneau « Score d'anomalie ML (pôle IA) » (qui lisait `aiops_anomaly_score`, non publié — ADR-AI-0001) a été retiré ; le journal du moteur voisin (id 17) élargi pour combler.
+- Les annotations « Escalades » et « Rapports du LLM » sont portées dans la vue d'ensemble, `$selecteur` remplacé par `{service="ml-detector"}` en dur, et **limitées au panneau IA** (`filter.ids`) pour ne pas marquer les courbes de l'infra. L'infobulle d'un rapport affiche le champ `popup` (markdown mis en forme : diagnostic, impact, incertitudes, actions, règles, pistes ; sans la gravité, déjà sur la courbe).
+- `disableDeletion: true` côté provisioning : retirer le fichier ne suffit pas, l'ancien dashboard a été supprimé de l'instance via l'API Grafana.
+

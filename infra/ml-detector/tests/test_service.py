@@ -106,6 +106,9 @@ def test_reanalysis_carries_the_previous_report(caplog):
     assert previous["verdict"] == "attaque" and previous["regles_deja_proposees"] == ["USE_ANTIBOT=javascript"]
     line = json.loads(next(r.message for r in caplog.records if '"event": "rapport"' in r.message))
     assert line["mise_a_jour"] is True and line["lien"] == "http://pc-ia:8080/reports/20261020T140000Z_sig.md"
+    # Infobulle de l'annotation : rapport mis en forme, sans la gravité (déjà sur la courbe).
+    assert "Botnet sur /" in line["popup"] and "USE_ANTIBOT=javascript" in line["popup"]
+    assert "gravit" not in line["popup"].lower()
 
 
 def test_dropped_analysis_releases_the_campaign_for_a_fresh_one():

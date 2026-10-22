@@ -20,7 +20,7 @@ redémarre rien.
  Loki ──> ml-detector ──── POST /analyze (jeton) ────────────> llm-gateway ──> Ollama
             │        └──── POST /heartbeat toutes les 30 s ──>     │           ChromaDB
             └─> /metrics (Prometheus) et journal JSON (Loki)       └──> reports/*.md, pages /reports
-                  └─> Grafana : tableau « Module IA SOC »               (règles à copier-coller)
+                  └─> Grafana : panneau « Module IA » (vue infra)               (règles à copier-coller)
 ```
 
 Le seul lien entre les deux machines est HTTP sur le port 8080 du PC IA, authentifié par le jeton

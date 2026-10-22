@@ -251,14 +251,19 @@ class DetectorService:
             "regles_deja_proposees": [r.get("content", "")[:300] for r in analysis.get("rules", [])],
         }
         # Une ligne par rapport : le tableau des incidents de Grafana (Loki) se construit sur ces lignes.
+        # `popup` est le rapport mis en forme (markdown), affiché tel quel dans l'infobulle de
+        # l'annotation sur la courbe de gravité : toute la mise en forme est faite ici, pas dans Grafana.
+        lien = f"{self.reports_url}/{fichier.replace(chr(92), '/').rsplit('/', 1)[-1]}" if self.reports_url and fichier else None
+        popup = _report_popup(analysis, report, item["trigger"], item["mise_a_jour"], lien)
         log.info(json.dumps({
             "event": "rapport", "signature": report.get("signature"), "declencheur": item["trigger"],
             "famille": queued.key[0] if isinstance(queued.key, tuple) else item["trigger"],
             "mise_a_jour": item["mise_a_jour"], "gravite": queued.severity, "verdict": verdict,
             "confiance": analysis.get("confidence"), "type": analysis.get("attack_type"),
-            "regles": len(analysis.get("rules", [])), "avertissements": len(report.get("warnings", [])),
+            "regles": len(analysis.get("rules", [])), "degrade": bool(report.get("degraded")),
             "duree_s": (report.get("timings") or {}).get("total_s"),
-            "lien": f"{self.reports_url}/{fichier.replace(chr(92), '/').rsplit('/', 1)[-1]}" if self.reports_url and fichier else None,
+            "popup": popup,
+            "lien": lien,
         }, ensure_ascii=False))
 
     def run(self, clock: Clock, until: datetime | None = None, on_tick=None) -> None:
@@ -312,6 +317,46 @@ class DetectorService:
             except GatewayError:
                 self.metrics.inc("soc_heartbeat_errors_total")
             stop.wait(self.heartbeat_s)
+
+
+_TRIGGER_LABEL = {"campagne": "campagne détectée", "symptome": "symptôme sans campagne",
+                  "visibilite": "perte de visibilité"}
+
+
+def _report_popup(analysis: dict, report: dict, trigger: str, maj: bool, lien: str | None) -> str:
+    """Rapport mis en forme (markdown) pour l'infobulle de l'annotation sur la courbe de gravité.
+    La gravité n'y figure pas : elle est déjà lue sur la courbe. Tout tient dans l'infobulle."""
+    lines: list[str] = []
+    contexte = _TRIGGER_LABEL.get(trigger, trigger) + (" · mise à jour" if maj else "")
+    lines.append(f"_{contexte} · confiance {analysis.get('confidence', '?')}_")
+    if report.get("degraded"):
+        lines.append("⚠️ **Analyse dégradée** (LLM indisponible) : vérifier manuellement.")
+    lines.append("")
+    lines.append(str(analysis.get("summary", "")).strip() or "_pas de diagnostic_")
+    if analysis.get("impact"):
+        lines += ["", f"**Impact** — {analysis['impact']}"]
+    warnings = report.get("warnings") or []
+    if warnings:
+        lines += ["", "**⚠ Cohérence** — " + " ; ".join(str(w) for w in warnings)]
+    if analysis.get("uncertainties"):
+        lines += ["", "**Incertitudes** — " + " ; ".join(str(u) for u in analysis["uncertainties"])]
+    if analysis.get("operator_actions"):
+        lines += ["", "**À faire**"] + [f"- {a}" for a in analysis["operator_actions"]]
+    rules = analysis.get("rules") or []
+    lines += ["", "**Règles proposées** (à relire avant de coller)"]
+    if rules:
+        for n, r in enumerate(rules, 1):
+            lines.append(f"{n}. {r.get('explanation', '').strip()}")
+            if r.get("side_effects"):
+                lines.append(f"   _effets de bord : {r['side_effects']}_")
+            lines.append(f"```\n{r.get('content', '').strip()}\n```")
+    else:
+        lines.append("_aucune — le WAF suffit, ou éléments insuffisants._")
+    if analysis.get("ideas_to_review"):
+        lines += ["", "**Pistes à expertiser** — " + " ; ".join(str(i) for i in analysis["ideas_to_review"])]
+    if lien:
+        lines += ["", f"[Rapport complet]({lien})"]
+    return "\n".join(lines)
 
 
 def _alarm_summary(alarms: list[Alarm]) -> list[dict]:
