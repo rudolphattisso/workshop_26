@@ -4,7 +4,8 @@
     partir du nom du service compose ; le guide d'intégration de l'infra parle encore de "waf",
     mais ses règles et son tableau de bord utilisent bien "bunkerweb") ;
   - LokiWazuhAlarmSource : alertes Wazuh ({service="wazuh"}, JSON reçu en syslog par Alloy) ;
-  - LokiRemediationSource : actions du moteur de remédiation ({service="remediation"}, JSON).
+  - LokiRemediationSource : actions du moteur de remédiation ({service="auto-recovery"} dans
+    develop : c'est lui qui redémarre ; « remediation » n'y est que le watchdog, JSON).
 
 API : GET /loki/api/v1/query_range, paginée (Loki tronque à `limit` lignes par requête). Les
 lignes d'erreur et ModSecurity du même flux sont ignorées par parsing.parse_line.
@@ -109,7 +110,7 @@ class LokiWazuhAlarmSource:
 
 
 class LokiRemediationSource:
-    def __init__(self, base_url: str = "http://loki:3100", query: str = '{service="remediation"}',
+    def __init__(self, base_url: str = "http://loki:3100", query: str = '{service="auto-recovery"}',
                  client: LokiClient | None = None):
         self.client = client or LokiClient(base_url)
         self.query = query

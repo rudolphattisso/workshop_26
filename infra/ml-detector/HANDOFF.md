@@ -249,3 +249,11 @@ Lu dans `git show infrastructure:...` (jamais modifiée par nous). **Document po
   - `ai/ai-node/tests/test_contract.py` : aucun champ ignoré en silence (`extra="ignore"`), chaque exemple passe l'analyse, les clés de contexte lues par le code produisent leur effet.
   - Ignorés dans les images Docker (`contracts/` hors du contexte de build).
 - Les exemples écrits à la main de `ai/ai-node/tests/fixtures/` restent (tests ciblés par indice).
+
+## Intégration dans develop (2026-10-22)
+- Branches : `ai/module-soc` (travail IA), `ai/fusion-develop` (copie d'`origin/develop` + fusion + intégration), PR vers `develop`.
+- Intégré dans `ai/fusion-develop` : service `ml-detector`, réseau `ia`, secret `llm_gateway_token` (compose) ; `llm_gateway_token` dans `ansible/inventory/hosts.yml` (généré au déploiement) ; cible `extensions.yml` (`tier: soc`) ; tableau déplacé dans `infra/grafana/dashboards/soc-ia-dashboard.json` ; `LLM_GATEWAY_URL` / `REPORTS_URL` dans `.env.example`.
+- Dans develop, c'est `auto-recovery` (ancien moteur infra) qui redémarre et journalise `remediation_*` (champ `msg`) : requête par défaut `{service="auto-recovery"}`. `remediation` n'est que le watchdog Dev.
+- Journaux au format commun (`timestamp`, `level`, `service`, `trace_id`, `event`, `logger`) ; `/ready` (503 si Loki injoignable).
+- Non vérifié : build Docker (daemon arrêté), démarrage réel de la pile.
+

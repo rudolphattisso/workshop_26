@@ -351,7 +351,7 @@ def main() -> int:
         reports_url=os.getenv("REPORTS_URL"),            # ex. http://<PC IA>:8080/reports (lien Grafana)
         ingest_delay_s=int(os.getenv("DETECTOR_INGEST_DELAY_S", "5")),
         actions=LokiRemediationSource(os.getenv("LOKI_URL", "http://loki:3100"),
-                                      os.getenv("LOKI_REMEDIATION_QUERY", '{service="remediation"}')),
+                                      os.getenv("LOKI_REMEDIATION_QUERY", '{service="auto-recovery"}')),
         # Seuils de perte de visibilité : à recalibrer avec python -m detector.calibrate sur le PC infra.
         visibility_errors=int(os.getenv("DETECTOR_VISIBILITY_ERRORS", "3")),
         probe_ua=os.getenv("DETECTOR_PROBE_UA", "resilience-blackbox/"),

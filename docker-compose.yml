@@ -59,6 +59,9 @@ networks:
     internal: true
     ipam: { config: [{ subnet: 172.30.90.0/24 }] }
 
+  ia:           # pôle IA : sortie du ml-detector vers le llm-gateway du PC IA (port 8080)
+    ipam: { config: [{ subnet: 172.30.110.0/24 }] }
+
 volumes:
   pgdata:
   prometheus-data:
@@ -95,6 +98,7 @@ secrets:
   operator_password:      { file: ./secrets/operator_password }
   remediation_token:      { file: ./secrets/remediation_token }
   grafana_admin_password: { file: ./secrets/grafana_admin_password }
+  llm_gateway_token:      { file: ./secrets/llm_gateway_token }
 
 services:
   # ===========================================================================
@@ -472,6 +476,34 @@ services:
     depends_on: [bunkerweb]
     labels: { resilience.tier: observability }
     deploy: { resources: { limits: { memory: 128m, cpus: "0.25" } } }
+
+  # ===========================================================================
+  #  MODULE IA SOC (docs/ia/, ADR-AI-0001) : détecte ce que le WAF laisse passer et demande une
+  #  analyse au LLM du PC IA. Lecture seule : ne déclenche AUCUNE remédiation.
+  # ===========================================================================
+  ml-detector:
+    <<: *python-service
+    build: { context: ./infra/ml-detector, target: runtime }   # modèle entraîné pendant le build
+    image: resilience/ml-detector:${APP_VERSION:-1.0.0}
+    environment:
+      LOKI_URL: http://loki:3100
+      LOKI_WAF_QUERY: '{service="bunkerweb"}'
+      LOKI_WAZUH_QUERY: '{service="wazuh"}'
+      LOKI_REMEDIATION_QUERY: '{service="auto-recovery"}'   # actions du moteur, en lecture seule
+      LLM_GATEWAY_URL: ${LLM_GATEWAY_URL:-}       # vide : détection seule, sans appel au LLM
+      REPORTS_URL: ${REPORTS_URL:-}               # lien « Ouvrir » du tableau Grafana
+      DETECTOR_CYCLE_S: "10"
+      # Seuils estimés : à remplacer par les valeurs mesurées (voir « Calibrage » plus bas).
+      DETECTOR_INGEST_DELAY_S: "5"      # retard d'ingestion de Loki
+      DETECTOR_PROBE_INTERVAL_S: "5"    # vos sondes blackbox à travers le WAF (scrape_interval)
+      DETECTOR_PROBE_MISSED: "3"        # sondes manquées d'affilée = perte de visibilité
+      DETECTOR_VISIBILITY_ERRORS: "3"   # cycles de 10 s avec Loki injoignable
+      LOKI_WAZUH_MARGIN_S: "30"         # retard des alertes Wazuh sur les faits
+    secrets: [llm_gateway_token]
+    networks: [monitoring, ia]
+    depends_on: { loki: { condition: service_started } }
+    labels: { resilience.tier: soc }
+    deploy: { resources: { limits: { memory: 512m, cpus: "1.0" } } }
 
   # ===========================================================================
   #  SUPERVISION DU PÔLE DEV (watchdog + API du dashboard) — n'agit pas encore sur alerte.

@@ -1,7 +1,8 @@
 # Intégration du module IA SOC dans la plateforme
 
-Ce document s'adresse aux pôles infra et cyber. Il décrit ce qu'il faut ajouter à la branche
-`infrastructure` pour brancher le module IA. Tous les blocs sont prêts à coller.
+Ce document s'adresse aux pôles infra et cyber. Il décrit ce que la PR du module IA ajoute à la
+plateforme (`docker-compose.yml`, `.env.example`, secret Ansible, cible Prometheus, tableau Grafana)
+et pourquoi. Les blocs ci-dessous sont ceux qui ont été intégrés.
 
 ## Vue d'ensemble
 
@@ -25,7 +26,7 @@ PC INFRA (compose resilience)                                PC IA (compose ai-n
   webhook de remédiation, aucune écriture dans la configuration du WAF. Un humain relit puis
   copie-colle les règles.
 
-## 1. Bloc compose (`docker-compose.yml` de la branche infrastructure)
+## 1. Bloc compose (intégré à `docker-compose.yml`)
 
 Le détecteur doit joindre le PC IA. Le réseau `monitoring` étant `internal: true`, il faut un réseau
 avec sortie. Le bloc ci-dessous en crée un, dédié (`ia`), plutôt que d'utiliser `mgmt` : seul le
@@ -55,7 +56,7 @@ détecteur y est branché, et la sortie peut être restreinte au seul PC IA (voi
       LOKI_URL: http://loki:3100
       LOKI_WAF_QUERY: '{service="bunkerweb"}'
       LOKI_WAZUH_QUERY: '{service="wazuh"}'
-      LOKI_REMEDIATION_QUERY: '{service="remediation"}'   # actions de votre moteur, en lecture seule
+      LOKI_REMEDIATION_QUERY: '{service="auto-recovery"}'   # actions du moteur, en lecture seule
       LLM_GATEWAY_URL: ${LLM_GATEWAY_URL:-}       # vide : détection seule, sans appel au LLM
       REPORTS_URL: ${REPORTS_URL:-}               # lien « Ouvrir » du tableau Grafana
       DETECTOR_CYCLE_S: "10"
@@ -105,7 +106,7 @@ puis le cycle suivant rattrape la période manquée (deux fenêtres au plus).
 Le LLM étant sur l'autre PC, l'analyse ne dépend pas de la machine attaquée. Les rapports restent
 consultables sur `/reports` même si Grafana ou Loki sont tombés.
 
-**Actions de votre moteur de remédiation** : le détecteur lit `{service="remediation"}` (alertes
+**Actions de votre moteur de remédiation** : le détecteur lit `{service="auto-recovery"}` (alertes
 reçues, redémarrages lancés, réussis, en échec, ignorés). La chronologie est donnée au LLM, qui dit
 si elles ont aidé, et recopiée telle quelle dans le rapport. Aucune interaction avec le moteur.
 
@@ -158,7 +159,7 @@ La cible est prise en compte sans redémarrer Prometheus. Si le détecteur tombe
 
 ## 4. Grafana
 
-Copier `infra/ml-detector/grafana/soc-ia-dashboard.json` dans `infra/grafana/dashboards/`. Il
+Le tableau est `infra/grafana/dashboards/soc-ia-dashboard.json` (provisionné automatiquement). Il
 utilise vos UID de sources fixes (`prometheus`, `loki`) et apparaît dans le dossier
 Resilience-Alpha. Il contient :
 
@@ -218,12 +219,14 @@ informative (`remediation: none`) reste possible.
 - Les accès du WAF portent `{service="bunkerweb"}`, nom du service compose posé par Alloy. Votre
   `docs/INTEGRATION.md` mentionne encore `{service="waf"}`, qui ne correspond plus à rien.
 - Les alertes Wazuh portent `{service="wazuh"}` (JSON dans une ligne syslog).
-- Les actions du moteur de remédiation portent `{service="remediation"}`. Le détecteur lit le nom de
-  l'action dans `event` (convention commune) ou `msg` (ancien format) : `remediation_started`,
+- Les actions de remédiation portent `{service="auto-recovery"}` : c'est ce service qui redémarre
+  (`remediation` n'est que le watchdog du pôle Dev). Le détecteur lit le nom de l'action dans `event`
+  (convention commune) ou `msg` (format actuel d'auto-recovery) : `remediation_started`,
   `remediation_succeeded`, `remediation_failed`, `remediation_skipped`, `remediation_refused`,
-  `alert_received`. Le moteur v0 de `develop` (surveillance seule) n'en écrit pas encore : la
-  chronologie restera vide tant qu'il ne journalise pas ses actions sous ces noms. Si vous
-  renommez ces événements, prévenez-nous (fichier `detector/infra_actions.py`).
+  `alert_received`. Si vous renommez ces événements, prévenez-nous (fichier
+  `detector/infra_actions.py`).
+- **Attention (Wazuh)** : les règles 100210 / 100211 cherchent le champ `msg`. Si auto-recovery passe
+  au format commun (`event`), elles ne se déclencheront plus.
 - Les règles locales lues par le détecteur sont 100100-100103, 100110-100112, 100200-100201 et
   100210-100211. Si vous ajoutez une règle, prévenez-nous pour qu'on la classe (fichier
   `detector/alarms.py`).
