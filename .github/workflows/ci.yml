@@ -1,0 +1,63 @@
+# Pipeline minimal : aucun secret dans l'historique Git + tests des services Python.
+# Il ne déploie rien : la démo se lance toujours avec `docker compose up` sur le PC Hôte.
+name: CI
+
+on:
+  push:
+    branches: [main, develop, "dev/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    name: Secrets (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tout l'historique : un secret supprimé reste dans les anciens commits
+      # Image officielle épinglée plutôt que gitleaks-action (pas de licence requise, même commande qu'en local).
+      # Les faux positifs validés sont listés dans .gitleaksignore.
+      - name: Scan de l'historique
+        run: docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.21.2 git /repo --redact --no-banner -v
+
+  tests:
+    name: Tests Python (pytest)
+    runs-on: ubuntu-latest
+    # Bases jetables, détruites en fin de job : authentification « trust », donc aucun mot de passe à gérer.
+    services:
+      payment-db:
+        image: postgres:16-alpine
+        env: { POSTGRES_DB: payment, POSTGRES_USER: payment_api, POSTGRES_HOST_AUTH_METHOD: trust }
+        ports: ["5433:5432"]
+        options: --health-cmd "pg_isready -U payment_api -d payment" --health-interval 5s --health-retries 10
+      auth-db:
+        image: postgres:16-alpine
+        env: { POSTGRES_DB: auth, POSTGRES_USER: auth_service, POSTGRES_HOST_AUTH_METHOD: trust }
+        ports: ["5434:5432"]
+        options: --health-cmd "pg_isready -U auth_service -d auth" --health-interval 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://payment_api@127.0.0.1:5433/payment
+      AUTH_DATABASE_URL: postgresql+psycopg://auth_service@127.0.0.1:5434/auth
+    defaults:
+      run:
+        working-directory: services
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/**/requirements*.txt
+      - run: pip install -r requirements-dev.txt
+      # Un pytest par service : chacun a son package `app` et son pytest.ini (pythonpath = .).
+      - name: pytest par service
+        run: |
+          for svc in common auth payment-api remediation smoke-test; do
+            echo "::group::$svc"
+            (cd "$svc" && python -m pytest -q) || failed="$failed $svc"
+            echo "::endgroup::"
+          done
+          if [ -n "$failed" ]; then echo "::error::Tests en échec :$failed"; exit 1; fi
