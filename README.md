@@ -3,7 +3,8 @@
 Démonstrateur de **cyber-résilience** (Workshop EPSI Bac+5, octobre 2026). Une plateforme de paiement
 **fictive** subit une attaque. Le système détecte l'anomalie, se répare **sans intervention humaine**, puis
 prouve la reprise par une **nouvelle transaction réussie**, le tout observé (Prometheus / Grafana / Loki)
-et protégé par un WAF (BunkerWeb) + SIEM (Wazuh).
+et protégé par un WAF (BunkerWeb) + SIEM (Wazuh). Un **module IA (SOC)** repère ce que le WAF laisse
+passer et fait rédiger par un LLM des règles de protection, relues par un humain (jamais appliquées seules).
 
 > Aucune donnée bancaire réelle · aucune action offensive hors de notre SI · aucun secret dans le dépôt.
 
@@ -25,11 +26,14 @@ docker-compose.yml        Définition de toute la plateforme (réseaux, secrets,
 scripts/ops.ps1|ops.sh    Point d'entrée des opérations (lance Ansible en conteneur)
 ansible/                  Runner, inventaire, playbooks (deploy, verify, backup, restore, recover, chaos…)
 infra/                    Configs : postgres, prometheus, alertmanager, loki, alloy, grafana, blackbox, docker-proxy, wazuh, vault
+├── ml-detector/          IA : détecteur ML (tourne dans ce compose, sur le PC Hôte)
 services/                 Dev : microservices Python/FastAPI, front et dashboard React + Tailwind
+ai/                       IA : nœud LLM du PC IA (llm-gateway + Ollama + ChromaDB), compose séparé
 contracts/                Contrats entre domaines (OpenAPI, format d'alerte, conventions de service)
 attack/                   Banc d'attaque de démo (DDoS, XSS) — à lancer depuis le PC Attaquant
 docs/
 ├── adr/                  Décisions techniques (ADR-<DOMAINE>-NNNN), index dans docs/adr/README.md
+├── ia/                   Module IA SOC : vue d'ensemble, intégration, déploiement du PC IA
 └── progression/          Journal de chaque domaine (matière du dossier PDF)
 CLAUDE.md                 Règles communes de l'équipe
 secrets/ backups/ reports/ exports/   Données locales (non versionnées)
@@ -132,6 +136,12 @@ Le WAF BunkerWeb bloque les XSS/SQLi (403) et bannit l'IP qui inonde (DDoS) ; **
 alertes correspondantes, **visibles dans Grafana** (section « SIEM Wazuh » + alertes Alertmanager) avec
 le pic et les blocages, et la transaction synthétique interne reste verte : le service tient.
 
+**Module IA SOC (détection + reprise sous charge)** — procédure détaillée (brancher le PC IA, relâcher
+le WAF, surcharge calibrée) dans [docs/ia/README.md](docs/ia/README.md). Sur la **vue d'ensemble**
+Grafana, la courbe « Module IA — gravité détectée » monte, puis une annotation marque l'escalade et le
+rapport du LLM (diagnostic + règles proposées dans l'infobulle), pendant que la reprise automatique
+redémarre le service.
+
 ## 6. Documentation
 
 | Sujet | Où |
@@ -145,6 +155,9 @@ le pic et les blocages, et la transaction synthétique interne reste verte : le 
 | Format des alertes (IA, Prometheus, WAF → moteur) | `contracts/alert.schema.json` |
 | Conventions de tout service (`/health`, `/ready`, `/metrics`, logs JSON) | `contracts/service-conventions.md` |
 | Détail des services Dev (développement sans Docker, routes, jetons) | `services/README.md` |
+| **Module IA SOC : vue d'ensemble, tests, comment le lancer** | [docs/ia/README.md](docs/ia/README.md) |
+| Module IA : intégration à la plateforme (compose, Prometheus, Grafana, métrique) | [docs/ia/INTEGRATION.md](docs/ia/INTEGRATION.md) |
+| Module IA : déploiement du PC IA (Ollama, gateway, modèles) | [docs/ia/DEPLOIEMENT-PC-IA.md](docs/ia/DEPLOIEMENT-PC-IA.md) |
 | Décisions techniques | `docs/adr/README.md` |
 | Avancement par domaine | `docs/progression/` |
 
