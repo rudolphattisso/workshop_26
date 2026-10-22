@@ -1296,7 +1296,7 @@
           "uid": "loki"
         },
         "enable": true,
-        "iconColor": "orange",
+        "iconColor": "#FF9830",
         "expr": "{service=\"ml-detector\"} |= \"\\\"event\\\": \\\"escalade\\\"\" | json | keep trigger, gravite",
         "titleFormat": "Escalade ({{trigger}})",
         "textFormat": "gravité {{gravite}}",
@@ -1314,7 +1314,7 @@
           "uid": "loki"
         },
         "enable": true,
-        "iconColor": "red",
+        "iconColor": "#C4162A",
         "expr": "{service=\"ml-detector\"} |= \"\\\"event\\\": \\\"rapport\\\"\" | json | keep verdict, type, popup",
         "titleFormat": "Rapport IA · {{verdict}} · {{type}}",
         "textFormat": "{{popup}}",

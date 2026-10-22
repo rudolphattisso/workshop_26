@@ -324,39 +324,31 @@ _TRIGGER_LABEL = {"campagne": "campagne détectée", "symptome": "symptôme sans
 
 
 def _report_popup(analysis: dict, report: dict, trigger: str, maj: bool, lien: str | None) -> str:
-    """Rapport mis en forme (markdown) pour l'infobulle de l'annotation sur la courbe de gravité.
-    La gravité n'y figure pas : elle est déjà lue sur la courbe. Tout tient dans l'infobulle."""
-    lines: list[str] = []
-    contexte = _TRIGGER_LABEL.get(trigger, trigger) + (" · mise à jour" if maj else "")
-    lines.append(f"_{contexte} · confiance {analysis.get('confidence', '?')}_")
+    """Résumé (markdown) pour l'infobulle de l'annotation sur la courbe de gravité : court, scannable.
+    Le détail (règles à copier, effets de bord, pistes) est dans le rapport complet (lien + /reports),
+    pas ici : une infobulle trop longue déborde. La gravité n'y figure pas (déjà sur la courbe)."""
+    lines: list[str] = [f"_{_TRIGGER_LABEL.get(trigger, trigger)}{' · mise à jour' if maj else ''} · "
+                        f"confiance {analysis.get('confidence', '?')}_"]
     if report.get("degraded"):
-        lines.append("⚠️ **Analyse dégradée** (LLM indisponible) : vérifier manuellement.")
-    lines.append("")
+        lines.append("⚠️ **Analyse dégradée** (LLM indisponible)")
     lines.append(str(analysis.get("summary", "")).strip() or "_pas de diagnostic_")
     if analysis.get("impact"):
-        lines += ["", f"**Impact** — {analysis['impact']}"]
-    warnings = report.get("warnings") or []
-    if warnings:
-        lines += ["", "**⚠ Cohérence** — " + " ; ".join(str(w) for w in warnings)]
-    if analysis.get("uncertainties"):
-        lines += ["", "**Incertitudes** — " + " ; ".join(str(u) for u in analysis["uncertainties"])]
-    if analysis.get("operator_actions"):
-        lines += ["", "**À faire**"] + [f"- {a}" for a in analysis["operator_actions"]]
+        lines.append(f"**Impact** — {analysis['impact']}")
+    if report.get("warnings"):
+        lines.append("**⚠ Cohérence** — " + " ; ".join(str(w) for w in report["warnings"]))
+    actions = analysis.get("operator_actions") or []
+    if actions:
+        lines.append("**À faire** — " + " ; ".join(str(a) for a in actions[:3]))
     rules = analysis.get("rules") or []
-    lines += ["", "**Règles proposées** (à relire avant de coller)"]
     if rules:
-        for n, r in enumerate(rules, 1):
-            lines.append(f"{n}. {r.get('explanation', '').strip()}")
-            if r.get("side_effects"):
-                lines.append(f"   _effets de bord : {r['side_effects']}_")
-            lines.append(f"```\n{r.get('content', '').strip()}\n```")
+        resume = " ; ".join(str(r.get("explanation", "")).strip().rstrip(".") for r in rules[:3])
+        lines.append(f"**{len(rules)} règle(s) proposée(s)** (syntaxe dans le rapport) — {resume}")
     else:
-        lines.append("_aucune — le WAF suffit, ou éléments insuffisants._")
-    if analysis.get("ideas_to_review"):
-        lines += ["", "**Pistes à expertiser** — " + " ; ".join(str(i) for i in analysis["ideas_to_review"])]
+        lines.append("**Aucune règle** — le WAF suffit, ou éléments insuffisants.")
     if lien:
-        lines += ["", f"[Rapport complet]({lien})"]
-    return "\n".join(lines)
+        lines.append(f"[→ rapport complet]({lien})")
+    # Une ligne vide entre les blocs pour un rendu aéré, longueur bornée.
+    return "\n\n".join(lines)[:1200]
 
 
 def _alarm_summary(alarms: list[Alarm]) -> list[dict]:
