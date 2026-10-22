@@ -1,0 +1,149 @@
+{
+ "cluster": {
+  "attack_hints": [
+   "sql_injection",
+   "automated_tool"
+  ],
+  "blocked_ratio": 0.0,
+  "cluster_id": "c0",
+  "deviations": [
+   {
+    "baseline_mean": 0.0,
+    "cluster_mean": 1.867,
+    "feature": "sqli_hits",
+    "z_score": 18.7
+   },
+   {
+    "baseline_mean": 0.0,
+    "cluster_mean": 1.0,
+    "feature": "ua_tool",
+    "z_score": 10.0
+   },
+   {
+    "baseline_mean": 0.119,
+    "cluster_mean": 1.0,
+    "feature": "ip_error_ratio",
+    "z_score": 6.1
+   },
+   {
+    "baseline_mean": 0.124,
+    "cluster_mean": 1.0,
+    "feature": "status_4xx",
+    "z_score": 2.7
+   },
+   {
+    "baseline_mean": 0.876,
+    "cluster_mean": 0.0,
+    "feature": "status_2xx",
+    "z_score": -2.7
+   }
+  ],
+  "injections_answered": 15,
+  "methods": {
+   "GET": 15
+  },
+  "n_distinct_ips": 1,
+  "n_requests": 15,
+  "samples": [
+   {
+    "ip": "192.168.137.205",
+    "method": "GET",
+    "score": 1.0,
+    "status": 422,
+    "ts": "2026-10-20T14:04:35+00:00",
+    "uri": "/api/payments?limit=%27%20UNION%20SELECT%20username%2Cpassword_hash%20FROM%20users--",
+    "user_agent": "python-requests/2.32.3"
+   },
+   {
+    "ip": "192.168.137.205",
+    "method": "GET",
+    "score": 1.0,
+    "status": 422,
+    "ts": "2026-10-20T14:04:38+00:00",
+    "uri": "/api/payments/'%20UNION%20SELECT%20username,password_hash%20FROM%20users--",
+    "user_agent": "python-requests/2.32.3"
+   },
+   {
+    "ip": "192.168.137.205",
+    "method": "GET",
+    "score": 0.999,
+    "status": 422,
+    "ts": "2026-10-20T14:04:30+00:00",
+    "uri": "/api/payments?id=1;%20DROP%20TABLE%20transactions;--",
+    "user_agent": "python-requests/2.32.3"
+   },
+   {
+    "ip": "192.168.137.205",
+    "method": "GET",
+    "score": 0.999,
+    "status": 422,
+    "ts": "2026-10-20T14:04:30+00:00",
+    "uri": "/api/payments?id=1%3B%20DROP%20TABLE%20transactions%3B--",
+    "user_agent": "python-requests/2.32.3"
+   },
+   {
+    "ip": "192.168.137.205",
+    "method": "GET",
+    "score": 0.999,
+    "status": 422,
+    "ts": "2026-10-20T14:04:30+00:00",
+    "uri": "/api/payments?limit=1;%20DROP%20TABLE%20transactions;--",
+    "user_agent": "python-requests/2.32.3"
+   }
+  ],
+  "score_max": 1.0,
+  "score_mean": 0.99,
+  "signature": "7f54ba2dcf5b",
+  "statuses": {
+   "422": 15
+  },
+  "top_ips": [
+   {
+    "assessment": null,
+    "count": 15,
+    "history": null,
+    "ip": "192.168.137.205"
+   }
+  ],
+  "top_paths": [
+   {
+    "count": 11,
+    "path": "/api/payments"
+   },
+   {
+    "count": 1,
+    "path": "/api/payments/1;%20DROP%20TABLE%20transactions;--"
+   },
+   {
+    "count": 1,
+    "path": "/api/payments/1%3B%20DROP%20TABLE%20transactions%3B--"
+   },
+   {
+    "count": 1,
+    "path": "/api/payments/1%27%20OR%20%271%27%3D%271"
+   },
+   {
+    "count": 1,
+    "path": "/api/payments/'%20UNION%20SELECT%20username,password_hash%20FROM%20users--"
+   }
+  ],
+  "top_user_agents": [
+   {
+    "count": 15,
+    "user_agent": "python-requests/2.32.3"
+   }
+  ],
+  "window_end": "2026-10-20T14:04:39+00:00",
+  "window_start": "2026-10-20T14:04:30+00:00"
+ },
+ "context": {
+  "alarmes": [],
+  "escalade": {
+   "reasons": [
+    "sql_injection (+25)",
+    "injection qui atteint l'application : 15 requêtes d'injection ont reçu une réponse de l'application (+30)"
+   ],
+   "severity": 55
+  }
+ }
+}

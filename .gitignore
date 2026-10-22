@@ -1,0 +1,22 @@
+# Caches Python (générés si on lance le code hors conteneur)
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Modèles entraînés (régénérés par le service "train") et rapports locaux
+infra/ml-detector/models/*
+!infra/ml-detector/models/.gitkeep
+# Même motif que la branche infrastructure (un « reports/ » nu masquerait leur reports/.gitkeep)
+reports/*
+!reports/.gitkeep
+
+# Exports Wazuh réels (IP internes, charges d'attaque) : jamais versionnés
+/wazuh-alerts.*
+
+# Données vectorielles du nœud IA
+ai/ai-node/data/
+
+# Secrets et rapports du nœud IA
+ai/ai-node/.env
+ai/ai-node/reports/
+.hypothesis/
