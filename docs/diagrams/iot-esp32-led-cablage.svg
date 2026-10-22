@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 600" width="820" height="600" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <title>Câblage Freenove ESP32-WROVER CAM + carte d'extension GPIO — LED verte et LED rouge</title>
+  <rect width="820" height="600" fill="#ffffff"/>
+
+  <!-- Repère : rangée basse de la carte d'extension GPIO -->
+  <text x="40" y="30" font-size="13" font-weight="700" fill="#1f2933">① Repère sur la carte d'extension (rangée du bas, côté breadboard)</text>
+  <rect x="40" y="42" width="740" height="56" rx="6" fill="#111827"/>
+  <g font-size="12" font-weight="700" text-anchor="middle" fill="#e5e7eb">
+    <text x="68" y="76">3.3V</text>
+    <text x="108" y="76">EN</text>
+    <text x="146" y="76">36</text>
+    <text x="182" y="76">39</text>
+    <text x="218" y="76">34</text>
+    <text x="254" y="76">35</text>
+    <text x="290" y="76">32</text>
+    <text x="326" y="76">33</text>
+    <text x="362" y="76">25</text>
+    <text x="398" y="76">26</text>
+    <text x="434" y="76">27</text>
+    <rect x="452" y="54" width="36" height="32" rx="4" fill="#dc2626"/>
+    <text x="470" y="76" fill="#ffffff">14</text>
+    <text x="506" y="76">12</text>
+    <rect x="524" y="54" width="44" height="32" rx="4" fill="#e5e7eb"/>
+    <text x="546" y="76" fill="#111827">GND</text>
+    <rect x="570" y="54" width="36" height="32" rx="4" fill="#16a34a"/>
+    <text x="588" y="76" fill="#ffffff">13</text>
+    <text x="630" y="76">3.3V</text>
+    <text x="676" y="76">3.3V</text>
+    <text x="720" y="76">5V</text>
+    <text x="756" y="76">5V</text>
+  </g>
+  <text x="40" y="118" font-size="11" fill="#374151">Les broches 14, GND et 13 se suivent : chaque broche est reliée à la colonne de breadboard située juste en dessous.</text>
+
+  <!-- Schéma électrique -->
+  <text x="40" y="160" font-size="13" font-weight="700" fill="#1f2933">② Schéma électrique</text>
+  <g transform="translate(0,120)">
+    <rect x="40" y="60" width="210" height="300" rx="10" fill="#1e3a5f" stroke="#0f1f33" stroke-width="2"/>
+    <rect x="80" y="85" width="130" height="70" rx="4" fill="#c0c7cf" stroke="#8a939c"/>
+    <text x="145" y="116" text-anchor="middle" font-size="12" fill="#1f2933" font-weight="600">ESP32-WROVER-E</text>
+    <text x="145" y="134" text-anchor="middle" font-size="11" fill="#1f2933">WiFi 2,4 GHz</text>
+    <circle cx="145" cy="190" r="20" fill="#111827" stroke="#9ca3af" stroke-width="3"/>
+    <text x="145" y="230" text-anchor="middle" font-size="11" fill="#cbd5e1">caméra (non utilisée)</text>
+    <text x="145" y="262" text-anchor="middle" font-size="14" fill="#ffffff" font-weight="700">Freenove</text>
+    <text x="145" y="280" text-anchor="middle" font-size="14" fill="#ffffff" font-weight="700">ESP32-WROVER</text>
+    <text x="145" y="298" text-anchor="middle" font-size="11" fill="#cbd5e1">+ GPIO Extension Board</text>
+    <rect x="120" y="345" width="50" height="22" rx="4" fill="#9ca3af" stroke="#6b7280"/>
+    <text x="145" y="385" text-anchor="middle" font-size="11" fill="#374151">USB-C → PC Hôte (alim + téléversement)</text>
+
+    <g font-size="13" font-weight="700" fill="#ffffff">
+      <circle cx="250" cy="150" r="6" fill="#fbbf24" stroke="#92400e"/>
+      <text x="236" y="155" text-anchor="end">GPIO13</text>
+      <circle cx="250" cy="220" r="6" fill="#fbbf24" stroke="#92400e"/>
+      <text x="236" y="225" text-anchor="end">GPIO14</text>
+      <circle cx="250" cy="320" r="6" fill="#fbbf24" stroke="#92400e"/>
+      <text x="236" y="325" text-anchor="end">GND</text>
+    </g>
+
+    <g stroke="#16a34a" stroke-width="4" fill="none" stroke-linecap="round">
+      <line x1="256" y1="150" x2="340" y2="150"/>
+      <line x1="420" y1="150" x2="500" y2="150"/>
+    </g>
+    <g stroke="#dc2626" stroke-width="4" fill="none" stroke-linecap="round">
+      <line x1="256" y1="220" x2="340" y2="220"/>
+      <line x1="420" y1="220" x2="500" y2="220"/>
+    </g>
+
+    <g>
+      <rect x="340" y="138" width="80" height="24" rx="5" fill="#e8d5b5" stroke="#7c5e2a" stroke-width="2"/>
+      <rect x="356" y="138" width="6" height="24" fill="#dc2626"/>
+      <rect x="370" y="138" width="6" height="24" fill="#dc2626"/>
+      <rect x="384" y="138" width="6" height="24" fill="#7c3f00"/>
+      <text x="380" y="128" text-anchor="middle" font-size="12" fill="#1f2933" font-weight="600">R1 = 220 Ω</text>
+      <rect x="340" y="208" width="80" height="24" rx="5" fill="#e8d5b5" stroke="#7c5e2a" stroke-width="2"/>
+      <rect x="356" y="208" width="6" height="24" fill="#dc2626"/>
+      <rect x="370" y="208" width="6" height="24" fill="#dc2626"/>
+      <rect x="384" y="208" width="6" height="24" fill="#7c3f00"/>
+      <text x="380" y="252" text-anchor="middle" font-size="12" fill="#1f2933" font-weight="600">R2 = 220 Ω</text>
+    </g>
+
+    <g stroke-width="2.5">
+      <polygon points="500,135 500,165 526,150" fill="#16a34a" stroke="#14532d"/>
+      <line x1="526" y1="135" x2="526" y2="165" stroke="#14532d"/>
+      <line x1="526" y1="150" x2="610" y2="150" stroke="#111827"/>
+      <polygon points="500,205 500,235 526,220" fill="#dc2626" stroke="#7f1d1d"/>
+      <line x1="526" y1="205" x2="526" y2="235" stroke="#7f1d1d"/>
+      <line x1="526" y1="220" x2="610" y2="220" stroke="#111827"/>
+    </g>
+    <text x="490" y="122" font-size="12" fill="#14532d" font-weight="600">LED verte</text>
+    <text x="490" y="258" font-size="12" fill="#7f1d1d" font-weight="600">LED rouge</text>
+    <text x="535" y="140" font-size="10" fill="#374151">(+) → (−)</text>
+    <text x="535" y="210" font-size="10" fill="#374151">(+) → (−)</text>
+
+    <g stroke="#111827" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="610,150 610,320 256,320"/>
+    </g>
+    <circle cx="610" cy="220" r="4" fill="#111827"/>
+    <text x="622" y="270" font-size="11" fill="#111827">GND commun</text>
+    <text x="622" y="284" font-size="11" fill="#111827">(pattes courtes)</text>
+  </g>
+
+  <g font-size="12" fill="#1f2933">
+    <text x="40" y="550">• Patte longue (+) côté résistance, patte courte (−) vers GND.  • GPIO HIGH = LED allumée.</text>
+    <text x="40" y="570">• GPIO13/14 ne sont pas utilisées par la caméra ni par la PSRAM. Éviter 0, 2, 12, 15 (démarrage), 16/17 (PSRAM),</text>
+    <text x="40" y="588">  et 4, 5, 18, 19, 21–23, 25–27, 34–39 (caméra).</text>
+  </g>
+</svg>

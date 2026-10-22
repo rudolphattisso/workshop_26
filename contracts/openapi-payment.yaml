@@ -64,6 +64,57 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
 
+  /api/auth/login/identify:
+    post:
+      tags: [auth]
+      summary: Étape identifiant de la connexion au back-office (pilote la LED de l'objet connecté)
+      description: |
+        Consigne additionnelle 1. Tient la place de la reconnaissance faciale (non livrée) :
+        `recognized` = l'identifiant est celui d'un compte `operator`. Met à jour la LED :
+        `GREEN_BLINK` si reconnu, `RED_FIXED_30S` sinon. Révèle l'existence des comptes opérateur
+        (comme le ferait la caméra) ; débit limité par le WAF.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdentifyRequest' }
+      responses:
+        '200':
+          description: Résultat de l'identification
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IdentifyResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/auth/iot/led:
+    get:
+      tags: [auth]
+      summary: Motif à afficher par la LED de l'objet connecté (ESP32, interrogé toutes les 300 ms)
+      description: |
+        Une connexion `operator` réussie publie `GREEN_FIXED_30S`, un mot de passe `operator` invalide
+        `RED_BLINK_X10` ; les comptes `client` (dont le smoke test) ne changent pas la LED. Chaque événement
+        incrémente `seq` ; l'objet ne démarre un motif que si `seq` change. Un motif retombe à `OFF` après sa
+        durée (GREEN_BLINK 120 s, GREEN_FIXED_30S 30 s, RED_BLINK_X10 5 s, RED_FIXED_30S 30 s). Voir docs/IOT.md.
+      security:
+        - deviceToken: []
+      responses:
+        '200':
+          description: État courant de la LED
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LedStatus' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503':
+          description: Objet connecté non configuré (`IOT_DEVICE_TOKEN` absent côté auth)
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
   /api/auth/me:
     get:
       tags: [auth]
@@ -282,6 +333,12 @@ components:
         `role` (`client` | `operator`), `jti`, `iat`, `exp` (15 min). Vérifié via `/api/auth/.well-known/jwks.json`.
         Un `kid` inconnu déclenche un rechargement du JWKS : redémarrer l'auth (clé éphémère) révoque tous les jetons.
 
+    deviceToken:
+      type: apiKey
+      in: header
+      name: X-Device-Token
+      description: Jeton partagé de l'objet connecté (secret `IOT_DEVICE_TOKEN`, fourni par Vault/SOPS).
+
   parameters:
     AccountId:
       name: accountId
@@ -338,6 +395,26 @@ components:
       properties:
         username: { type: string, minLength: 1, maxLength: 64 }
         password: { type: string, minLength: 1, maxLength: 128, writeOnly: true }
+
+    IdentifyRequest:
+      type: object
+      required: [username]
+      additionalProperties: false
+      properties:
+        username: { type: string, minLength: 1, maxLength: 64 }
+
+    IdentifyResponse:
+      type: object
+      required: [recognized]
+      properties:
+        recognized: { type: boolean }
+
+    LedStatus:
+      type: object
+      required: [pattern, seq]
+      properties:
+        pattern: { type: string, enum: [OFF, GREEN_BLINK, GREEN_FIXED_30S, RED_BLINK_X10, RED_FIXED_30S] }
+        seq: { type: integer, description: Incrémenté à chaque événement ; repart de 1 au redémarrage de l'auth }
 
     TokenResponse:
       type: object

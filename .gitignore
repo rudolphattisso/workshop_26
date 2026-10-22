@@ -17,6 +17,8 @@ reports/*
 !reports/.gitkeep
 *.dump
 *.sops.dec.*
+# Firmware IoT : identifiants WiFi + jeton de l'objet (seul secrets.example.h est versionné)
+iot/**/secrets.h
 __pycache__/
 *.pyc
 .venv/

@@ -1,19 +1,28 @@
 // Connexion opérateur : même service d'auth que le front client, relayé par le nginx du dashboard.
 
-export async function login(username, password) {
+async function post(path, body) {
   let response;
   try {
-    response = await fetch("/api/auth/login", {
+    response = await fetch(path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify(body),
     });
   } catch {
     throw new Error("Service d'authentification injoignable.");
   }
   const data = await response.json().catch(() => null);
   if (!response.ok) throw new Error(data?.title ?? `Erreur ${response.status}`);
-  return data.access_token;
+  return data;
+}
+
+/** Étape 1 (consigne additionnelle 1) : l'identifiant est-il celui d'un opérateur ? Pilote aussi la LED. */
+export async function identify(username) {
+  return (await post("/api/auth/login/identify", { username })).recognized;
+}
+
+export async function login(username, password) {
+  return (await post("/api/auth/login", { username, password })).access_token;
 }
 
 /** Contenu du JWT, pour l'affichage seulement : le moteur vérifie lui-même la signature et le rôle. */

@@ -25,3 +25,18 @@ class UserOut(BaseModel):
     id: uuid.UUID
     username: str
     role: Literal["client", "operator"]
+
+
+class IdentifyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    username: str = Field(min_length=1, max_length=64)
+
+
+class IdentifyResponse(BaseModel):
+    recognized: bool
+
+
+class LedStatus(BaseModel):
+    pattern: Literal["OFF", "GREEN_BLINK", "GREEN_FIXED_30S", "RED_BLINK_X10", "RED_FIXED_30S"]
+    seq: int

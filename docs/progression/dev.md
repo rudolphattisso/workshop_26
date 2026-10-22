@@ -366,3 +366,30 @@ les merge après relecture.
 3. Répéter la démo complète plusieurs fois
 
 **Prochain démarrage** : remonter `dev/app` → `develop` (popups), puis brancher le playbook `SERVICE_DOWN` sur le watchdog
+
+## 2026-10-22 — Objet connecté : LED de statut du back-office (consigne additionnelle 1)
+
+**Fait**
+- Matériel : Freenove ESP32-WROVER CAM + carte d'extension GPIO, LED verte (GPIO13) et rouge (GPIO14), 220 Ω.
+  Schémas dans `docs/diagrams/` (électrique + vue breadboard générée par `gen_iot_breadboard.py`)
+- Firmware `iot/led-status/led-status.ino` (Arduino IDE) : interroge `GET /api/auth/iot/led` toutes les 300 ms,
+  joue les motifs localement (`millis()`, sans `delay()`), extinction si le serveur ne répond plus pendant 5 s,
+  reconnexion WiFi, mode test manuel au moniteur série. Secrets dans `secrets.h` (gitignoré)
+- Service `auth` : état de la LED en mémoire (`app/iot.py`), `POST /api/auth/login/identify` (étape identifiant),
+  `GET /api/auth/iot/led` (jeton `X-Device-Token`), `POST /api/auth/login` met à jour la LED pour les opérateurs
+- Dashboard : connexion en deux étapes (identifiant, puis mot de passe), attente de 30 s après un identifiant non reconnu
+- Contrat `contracts/openapi-payment.yaml` mis à jour ; doc complète dans `docs/IOT.md`
+
+**Tests** : 18 pytest dans `services/auth/tests/test_iot.py` (39 au total pour `auth`) · 16 Vitest du dashboard ;
+build du dashboard OK
+
+**Décisions**
+- Écarts assumés avec la consigne : ESP32 au lieu d'ESP8266, Arduino IDE au lieu de CLion + PlatformIO, 2 LED
+  au lieu d'une bicolore (matériel disponible). Caméra et reconnaissance faciale non livrées faute de temps :
+  « reconnu » = compte opérateur existant
+- Seuls les comptes `operator` pilotent la LED (smoke test et attaques sur les comptes clients exclus)
+- L'ESP32 interroge le PC Hôte via le WAF (port 80) : adresse fixe côté serveur, aucun nouveau port exposé
+
+**Demandes aux autres domaines**
+- Infra : `IOT_DEVICE_TOKEN_FILE` (+ secret) sur le service `auth` du `docker-compose.yml` · point d'accès en 2,4 GHz
+- Cyber : ne pas bannir les ~3 req/s de l'ESP32 vers `/api/auth/iot/led` · jeton dans Vault/SOPS
