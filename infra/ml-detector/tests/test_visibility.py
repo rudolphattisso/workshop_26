@@ -184,6 +184,7 @@ class Probed:
     """Sondes toutes les 5 s jusqu'à `stop`, et `users` requêtes d'utilisateurs par fetch."""
     def __init__(self, stop, users=0):
         self.stop, self.users = stop, users
+        self.users_until = None                          # après cette date, plus aucune requête utilisateur
 
     def fetch(self, start, end):
         out, t = [], start
@@ -192,7 +193,8 @@ class Probed:
                 out.append(HttpRequestLog(t, "172.30.40.5", "GET", "/", "HTTP/1.1", 200, 10,
                                           user_agent="resilience-blackbox/1.0"))
             t += timedelta(seconds=5)
-        return out + [HttpRequestLog(end - timedelta(seconds=1), "10.0.0.9", "GET", "/", "HTTP/1.1", 200, 10)] * self.users
+        users = 0 if self.users_until and end > self.users_until else self.users
+        return out + [HttpRequestLog(end - timedelta(seconds=1), "10.0.0.9", "GET", "/", "HTTP/1.1", 200, 10)] * users
 
 
 def ticks(svc, n, start=T):
@@ -203,7 +205,8 @@ def ticks(svc, n, start=T):
 
 def test_missing_probes_are_seen_in_15_seconds_not_60(caplog):
     gw = FakeGateway()
-    svc, _ = make(gw, logs=Probed(stop=T + timedelta(seconds=30)))
+    svc, _ = make(gw, logs=Probed(stop=T + timedelta(seconds=30), users=5))
+    svc.logs.users_until = T + timedelta(seconds=30)    # le WAF meurt : plus rien du tout ensuite
     with caplog.at_level("INFO", logger="ml_detector"):
         ticks(svc, 6)                                   # dernière sonde à T+25 s ; alerte à T+50 s
     assert len(gw.calls) == 1
@@ -216,7 +219,7 @@ def test_probes_missing_while_other_traffic_flows_says_so():
     gw = FakeGateway()
     svc, _ = make(gw, logs=Probed(stop=T + timedelta(seconds=30), users=40))
     ticks(svc, 6)
-    assert "autres requêtes arrivent" in gw.calls[0][1]["escalade"]["reasons"][0]
+    assert "autres requêtes sont arrivées" in gw.calls[0][1]["escalade"]["reasons"][0]
 
 
 def test_regular_probes_never_raise_an_alert(caplog):

@@ -97,3 +97,29 @@ def test_probes_follow_the_common_service_conventions():
         assert err.value.code == 503
     finally:
         server.shutdown()
+
+
+def test_invalid_gateway_url_is_a_handled_error_not_a_crash():
+    # Vu au premier déploiement : « LLM_GATEWAY_URL=   # commentaire » donnait l'URL « # ex. http://... »,
+    # et le ValueError d'urllib tuait le fil du signal de vie.
+    from detector.gateway_client import GatewayClient, GatewayError
+    with pytest.raises(GatewayError):
+        GatewayClient("# ex. http://192.168.137.y:8080", "t" * 40).heartbeat({"statut": "ok"})
+
+
+def test_uncaught_thread_error_is_logged_as_one_json_line(capsys):
+    import threading
+    from detector import logs
+    root = logging.getLogger()
+    saved = (root.handlers[:], root.level, threading.excepthook)
+    try:
+        logs.setup()
+        worker = threading.Thread(target=lambda: 1 / 0, name="essai")
+        worker.start()
+        worker.join()
+        out = capsys.readouterr().out
+    finally:                                         # configuration globale : rendue aux autres tests
+        root.handlers[:], threading.excepthook = saved[0], saved[2]
+        root.setLevel(saved[1])
+    line = json.loads(out.strip().splitlines()[0])
+    assert (line["event"], line["fil"], line["level"]) == ("fil_arrete", "essai", "ERROR")

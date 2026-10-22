@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import sys
+import threading
 from datetime import datetime, timezone
 
 
@@ -48,3 +49,10 @@ def setup(level: int | str | None = None) -> None:
     root = logging.getLogger()
     root.handlers[:] = [handler]
     root.setLevel(level or os.getenv("LOG_LEVEL", "INFO").upper())
+
+    def thread_error(args: threading.ExceptHookArgs) -> None:
+        logging.getLogger("ml_detector").error(
+            json.dumps({"event": "fil_arrete", "fil": getattr(args.thread, "name", "?"),
+                        "erreur": f"{args.exc_type.__name__}: {args.exc_value}"[:300]}, ensure_ascii=False),
+            exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
+    threading.excepthook = thread_error

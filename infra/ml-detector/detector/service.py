@@ -147,7 +147,9 @@ class DetectorService:
     def _visibility_reasons(self, window: list[HttpRequestLog], new: list[HttpRequestLog], now: datetime) -> list[str]:
         reasons, causes = [], set()
         n_requests = len(window)
-        others = sum(1 for r in window if not (self.probe_ua and r.user_agent.startswith(self.probe_ua)))
+        # Requêtes REÇUES pendant ce cycle (pas toute la fenêtre de 60 s, qui contient encore celles
+        # d'avant la coupure : vu en test de panne, « 57 autres requêtes arrivent » avec le WAF arrêté).
+        others = sum(1 for r in new if not (self.probe_ua and r.user_agent.startswith(self.probe_ua)))
         probes = [r.ts for r in new if self.probe_ua and r.user_agent.startswith(self.probe_ua)]
         if probes:
             self._last_probe = max(probes + ([self._last_probe] if self._last_probe else []))
@@ -157,7 +159,7 @@ class DetectorService:
                            f"{(now - self._last_probe).total_seconds():.0f} s (attendues toutes les "
                            f"{self.probe_interval.total_seconds():g} s) : "
                            + ("WAF arrêté ou collecte des journaux coupée" if others == 0 else
-                              f"pourtant {others} autres requêtes arrivent : le WAF ne sert plus les sondes "
+                              f"pourtant {others} autres requêtes sont arrivées pendant ce cycle : le WAF ne sert plus les sondes "
                               "(saturé, sondes bannies) ou la sonde est arrêtée"))
         before = [n for t, n in self._recent_counts if now - t <= timedelta(minutes=5)]
         self._recent_counts.append((now, n_requests))
@@ -333,7 +335,12 @@ def main() -> int:
     # Secrets lus dans /run/secrets (contrat de l'infra), jamais en variable d'environnement en clair.
     token_file = Path(os.getenv("LLM_GATEWAY_TOKEN_FILE", "/run/secrets/llm_gateway_token"))
     token = token_file.read_text(encoding="utf-8").strip() if token_file.exists() else ""
-    gateway_url = os.getenv("LLM_GATEWAY_URL", "")
+    gateway_url = os.getenv("LLM_GATEWAY_URL", "").strip()
+    if gateway_url and not gateway_url.startswith(("http://", "https://")):
+        log.error(json.dumps({"event": "configuration_invalide", "variable": "LLM_GATEWAY_URL",
+                              "valeur": gateway_url[:80], "effet": "détection seule, sans appel au LLM"},
+                             ensure_ascii=False))
+        gateway_url = ""
     if gateway_url and len(token) < 32:
         print("LLM_GATEWAY_TOKEN absent ou trop court", file=sys.stderr)
         return 1

@@ -255,5 +255,7 @@ Lu dans `git show infrastructure:...` (jamais modifiée par nous). **Document po
 - Intégré dans `ai/fusion-develop` : service `ml-detector`, réseau `ia`, secret `llm_gateway_token` (compose) ; `llm_gateway_token` dans `ansible/inventory/hosts.yml` (généré au déploiement) ; cible `extensions.yml` (`tier: soc`) ; tableau déplacé dans `infra/grafana/dashboards/soc-ia-dashboard.json` ; `LLM_GATEWAY_URL` / `REPORTS_URL` dans `.env.example`.
 - Dans develop, c'est `auto-recovery` (ancien moteur infra) qui redémarre et journalise `remediation_*` (champ `msg`) : requête par défaut `{service="auto-recovery"}`. `remediation` n'est que le watchdog Dev.
 - Journaux au format commun (`timestamp`, `level`, `service`, `trace_id`, `event`, `logger`) ; `/ready` (503 si Loki injoignable).
-- Non vérifié : build Docker (daemon arrêté), démarrage réel de la pile.
-
+- Vérifié en réel (2026-10-22, `ops deploy` sur ai/fusion-develop) : 28 conteneurs sains, vérification de l'équipe au vert, ml-detector healthy, /ready OK, cible Prometheus up, 131 requêtes BunkerWeb réelles lues par fenêtre (cycle 0,1 s), lien PC IA (réseau ia, jeton, signal de vie) OK via une gateway locale.
+- Test de panne (`ops chaos -e target=bunkerweb -e fault=kill`, détection 25 s, reprise 64 s) : perte de visibilité (sondes absentes 22 s) -> rapport, puis symptôme (30 alarmes Wazuh) -> rapport avec la chronologie d'auto-recovery ; « visibilité rétablie » au retour des sondes.
+- Corrigé pendant ce lancement : `LLM_GATEWAY_URL=   # commentaire` (valeur vide + commentaire) pris pour l'URL par Compose -> fil du signal de vie tué ; client et démarrage durcis, exceptions de fil en JSON ; motif « autres requêtes » compté sur le cycle et non sur la fenêtre.
+- Bug de develop (non corrigé, à signaler à l'infra) : sur un poste neuf, `ops deploy` démarre Vault avant `bunkerweb_prepare` -> BW_API_TOKEN / BW_UI_PASSWORD manquants, échec.
