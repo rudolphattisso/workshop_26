@@ -10,3 +10,4 @@ Format : `ADR-<DOMAINE>-NNNN-titre-court.md` — domaines : DEV, INFRA, AI, SEC,
 | [ADR-DEV-0004](ADR-DEV-0004-contrats-remediation.md) | Moteur de remédiation : format d'alerte, playbooks et preuve de reprise | DEV | accepté | 2026-10-20 |
 | [ADR-DEV-0005](ADR-DEV-0005-integration-plateforme-infra.md) | Intégration à la plateforme Infra : préfixe `/api`, secrets `_FILE`, cibles Compose, docker-proxy (amende ADR-DEV-0004) | DEV | accepté | 2026-10-20 |
 | [ADR-DEV-0006](ADR-DEV-0006-supervision-topologie.md) | Supervision : watchdog de topologie (services + connexions) et dashboard temps réel | DEV | accepté | 2026-10-21 |
+| [ADR-DEV-0007](ADR-DEV-0007-remediation-v1-supervision-action.md) | Remédiation v1 : supervision (`remediation`) et action (`auto-recovery`) séparées (amende ADR-DEV-0004 et 0006) | DEV | accepté | 2026-10-22 |

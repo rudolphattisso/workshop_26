@@ -366,3 +366,22 @@ les merge après relecture.
 3. Répéter la démo complète plusieurs fois
 
 **Prochain démarrage** : remonter `dev/app` → `develop` (popups), puis brancher le playbook `SERVICE_DOWN` sur le watchdog
+
+## 2026-10-22 — Contrat de remédiation aligné sur le déploiement (`fusion/dev_infra`)
+
+**Contexte** : après le merge `infrastructure` → `develop` (`a0f8c31`, `8affbc2` d'Arman), le rôle de remédiation est
+réparti entre `remediation` (notre watchdog + dashboard) et `auto-recovery` (moteur de l'Infra, qui agit).
+
+**Fait**
+- `contracts/openapi-remediation.yaml` 0.4.0 : tableau « état de l'implémentation », un `servers` par service,
+  `/alerts`, `/incidents` et `/playbooks` marqués `x-implementation: v2`, comportement réel du webhook (auto-recovery,
+  réponse 202), correspondance `auth-db`/`payment-db` → `postgres` et `smoke-test` → `txprobe`
+- ADR-DEV-0007 (amende 0004 et 0006) · explication pour l'équipe : `docs/explications/remediation-v1.md`
+
+**Constats**
+- `contracts/network.md` n'existe pas alors que plusieurs fichiers y renvoient → à demander à Infra + Cyber
+- Le module IA ne remédie pas (`docs/ia/INTEGRATION.md`) : l'absence de `POST /alerts` ne le bloque pas
+
+**À demander**
+- **Infra + Cyber** : créer `contracts/network.md` (ports publiés, réseaux, qui parle à qui)
+- **Infra** : relire la PR du contrat ; décider qui maintient `services/auto-recovery/`

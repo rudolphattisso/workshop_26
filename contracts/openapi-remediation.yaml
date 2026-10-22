@@ -1,11 +1,24 @@
 openapi: 3.1.0
 info:
   title: RESILIENCE-ALPHA — Moteur de remédiation
-  version: 0.3.0
+  version: 0.4.0
   description: |
-    Contrat du moteur de remédiation automatique (`services/remediation`).
-    Producteur : Dev. Consommateurs : IA (envoi d'alertes), Infra (Alertmanager), Cyber (WAF / SIEM),
-    dashboard de supervision.
+    Contrat du moteur de remédiation automatique.
+    Producteur : Dev. Consommateurs : Infra (Alertmanager), Cyber (WAF / SIEM), dashboard de supervision.
+    Le module IA ne remédie pas (docs/ia/INTEGRATION.md) : il publie une métrique Prometheus, sans appel à ce moteur.
+
+    ## État de l'implémentation (v1, gel du 22/10) — ADR-DEV-0007
+
+    Pour la démo, le moteur est **réparti sur deux services Compose** :
+
+    | Service | Code | Rôle | Endpoints servis | Port publié (127.0.0.1) |
+    |---|---|---|---|---|
+    | `remediation` | `services/remediation` (Dev) | **Surveiller** : watchdog, topologie, flux du dashboard | `/services`, `/events` (SSE), sondes | 18090 |
+    | `auto-recovery` | `services/auto-recovery` (Infra) | **Agir** : alerte Alertmanager → restart via docker-proxy → transaction de preuve | `/webhook/alertmanager`, `/events` (journal JSON), `/health` | 18095 |
+
+    Les opérations marquées `x-implementation: v2` (`/alerts`, `/incidents`, `/playbooks`) sont la cible du
+    contrat mais **ne sont pas servies en v1**. Le reste de cette description (cycle de vie, déduplication,
+    playbooks) décrit cette cible ; l'écart de la v1 est détaillé sur `/webhook/alertmanager`.
 
     ## Cycle de vie d'un incident
 
@@ -56,8 +69,10 @@ info:
     `contracts/service-conventions.md`.
 
 servers:
-  - url: /
-    description: Réseau interne uniquement, port 8000 du conteneur `remediation` (voir contracts/network.md)
+  - url: http://remediation:8000
+    description: Supervision (watchdog + API du dashboard). Réseau interne ; 127.0.0.1:18090 sur le PC Hôte
+  - url: http://auto-recovery:8000
+    description: Action (webhook Alertmanager). Réseau interne ; 127.0.0.1:18095 sur le PC Hôte
 
 tags:
   - name: alerts
@@ -71,8 +86,9 @@ paths:
   # ---------------------------------------------------------------- alertes
   /alerts:
     post:
+      x-implementation: v2
       tags: [alerts]
-      summary: Signaler un incident
+      summary: Signaler un incident (non servi en v1)
       description: |
         Point d'entrée commun de l'IA, du WAF et du SIEM. Le corps suit `contracts/alert.schema.json`.
         Réessayer avec le même `alert_id` est sans risque (réponse 200, aucune nouvelle action).
@@ -98,12 +114,27 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   /webhook/alertmanager:
+    servers:
+      - url: http://auto-recovery:8000
+        description: Servi par auto-recovery en v1 (receiver `auto-recovery` de infra/alertmanager/alertmanager.yml)
     post:
       tags: [alerts]
       summary: Recevoir un webhook Alertmanager (format natif v4)
       description: |
         Chemin déjà configuré par l'Infra (receiver Alertmanager) : évite de transformer le format d'Alertmanager.
-        Chaque alerte `firing` est convertie :
+
+        **Comportement v1 (`auto-recovery`)** — sous-ensemble de la cible décrite plus bas :
+        - action lue dans le label `remediation` ; seule `restart` existe (`none` ou absent ⇒ observée seulement) ;
+        - `target` confronté à la liste blanche `REMEDIATION_ALLOWED_TARGETS`
+          (`bunkerweb,frontend,auth,payment-api,postgres,vault`), sinon `remediation_refused` ;
+        - cooldown de 45 s par cible (`REMEDIATION_COOLDOWN_SECONDS`) contre les redémarrages en boucle ;
+        - restart via `docker-proxy`, puis **preuve de reprise** : `GET http://txprobe:8000/check` répété jusqu'à
+          `ok: true` (90 s maximum). Pas encore de vérification `/ready` ni `consistency` séparée ;
+        - réponse `202 {accepted: [{alertname, action, target}]}`, l'action s'exécute en arrière-plan ;
+        - pas d'objet `Incident` : chaque étape est un événement de `GET /events` d'auto-recovery et un log JSON
+          (`remediation_started`, `remediation_succeeded`, `remediation_failed`…).
+
+        **Cible (v2)** — chaque alerte `firing` est convertie :
 
         | Champ de l'alerte | Source dans Alertmanager |
         |---|---|
@@ -133,8 +164,25 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/AlertmanagerWebhook' }
       responses:
+        '202':
+          description: v1 (auto-recovery) — alertes acceptées, remédiation lancée en arrière-plan
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accepted]
+                properties:
+                  accepted:
+                    type: array
+                    items:
+                      type: object
+                      required: [alertname, action, target]
+                      properties:
+                        alertname: { type: string, example: PaymentApiUnavailable }
+                        action: { type: string, enum: [restart] }
+                        target: { type: string, example: payment-api }
         '200':
-          description: Webhook traité
+          description: Cible (v2) — webhook traité
           content:
             application/json:
               schema:
@@ -151,8 +199,9 @@ paths:
   # -------------------------------------------------------------- incidents
   /incidents:
     get:
+      x-implementation: v2
       tags: [incidents]
-      summary: Lister les incidents (les plus récents d'abord)
+      summary: Lister les incidents, les plus récents d'abord (non servi en v1)
       security:
         - operatorJwt: []
       parameters:
@@ -175,8 +224,9 @@ paths:
 
   /incidents/{incidentId}:
     get:
+      x-implementation: v2
       tags: [incidents]
-      summary: Détail d'un incident, avec la chronologie de ses étapes
+      summary: Détail d'un incident, avec la chronologie de ses étapes (non servi en v1)
       security:
         - operatorJwt: []
       parameters:
@@ -212,8 +262,9 @@ paths:
 
   /playbooks:
     get:
+      x-implementation: v2
       tags: [incidents]
-      summary: Table de décision incident_type → actions (version en vigueur)
+      summary: Table de décision incident_type → actions, version en vigueur (non servi en v1)
       security:
         - operatorJwt: []
       responses:
@@ -237,6 +288,9 @@ paths:
       tags: [incidents]
       summary: Flux temps réel pour le dashboard (Server-Sent Events)
       description: |
+        Servi par `remediation`. En v1, seuls les événements `services` et `heartbeat` sont émis (pas encore
+        d'`incident`). À ne pas confondre avec `GET /events` d'`auto-recovery`, simple journal JSON de ses actions.
+
         Dès la connexion, le serveur envoie l'état courant : un événement `services`, puis un événement `incident`
         par incident ouvert ou récent. Il envoie ensuite un événement à chaque changement.
 
@@ -426,7 +480,13 @@ components:
             type: object
             required: [name, label, role, state, detail]
             properties:
-              name: { type: string, example: payment-api, description: Service Compose (cible des remédiations) }
+              name:
+                type: string
+                example: payment-api
+                description: |
+                  Identifiant du composant. Égal au service Compose, sauf trois composants logiques :
+                  `auth-db` et `payment-db` → service `postgres` (une instance, deux bases) ;
+                  `smoke-test` → service `txprobe`. Toujours convertir avant d'en faire un `target`.
               label: { type: string, example: API paiement }
               role: { type: string, enum: [edge, app, data, probe] }
               state: { $ref: '#/components/schemas/ComponentState' }
