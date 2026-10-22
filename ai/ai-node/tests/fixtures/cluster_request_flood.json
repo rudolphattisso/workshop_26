@@ -1,0 +1,155 @@
+{
+  "cluster_id": "c0",
+  "signature": "b68a8d9df158",
+  "window_start": "2026-10-20T14:12:01+00:00",
+  "window_end": "2026-10-20T14:12:59+00:00",
+  "n_requests": 4645,
+  "n_distinct_ips": 6,
+  "score_mean": 0.999,
+  "score_max": 0.999,
+  "blocked_ratio": 0.941,
+  "attack_hints": [
+    "request_flood",
+    "automated_tool"
+  ],
+  "top_ips": [
+    {
+      "ip": "192.168.137.228",
+      "count": 798,
+      "history": null,
+      "assessment": null
+    },
+    {
+      "ip": "192.168.137.226",
+      "count": 790,
+      "history": null,
+      "assessment": null
+    },
+    {
+      "ip": "192.168.137.227",
+      "count": 779,
+      "history": null,
+      "assessment": null
+    },
+    {
+      "ip": "192.168.137.225",
+      "count": 768,
+      "history": null,
+      "assessment": null
+    },
+    {
+      "ip": "192.168.137.229",
+      "count": 759,
+      "history": null,
+      "assessment": null
+    }
+  ],
+  "top_paths": [
+    {
+      "path": "/",
+      "count": 1604
+    },
+    {
+      "path": "/api/payments",
+      "count": 1527
+    },
+    {
+      "path": "/api/payments/ready",
+      "count": 1514
+    }
+  ],
+  "methods": {
+    "GET": 4645
+  },
+  "statuses": {
+    "403": 4372,
+    "200": 137,
+    "401": 74,
+    "503": 62
+  },
+  "top_user_agents": [
+    {
+      "user_agent": "python-requests/2.32.3",
+      "count": 4645
+    }
+  ],
+  "deviations": [
+    {
+      "feature": "endpoint_sessionless_ips",
+      "cluster_mean": 1.946,
+      "baseline_mean": 0.0,
+      "z_score": 19.5
+    },
+    {
+      "feature": "ua_tool",
+      "cluster_mean": 1.0,
+      "baseline_mean": 0.0,
+      "z_score": 10.0
+    },
+    {
+      "feature": "ip_errors_per_min",
+      "cluster_mean": 3.331,
+      "baseline_mean": 0.656,
+      "z_score": 3.6
+    },
+    {
+      "feature": "ip_req_per_min",
+      "cluster_mean": 5.747,
+      "baseline_mean": 2.647,
+      "z_score": 3.5
+    },
+    {
+      "feature": "ua_len",
+      "cluster_mean": 3.135,
+      "baseline_mean": 4.197,
+      "z_score": -1.3
+    }
+  ],
+  "samples": [
+    {
+      "ts": "2026-10-20T14:12:01+00:00",
+      "ip": "192.168.137.225",
+      "method": "GET",
+      "uri": "/api/payments",
+      "status": 503,
+      "user_agent": "python-requests/2.32.3",
+      "score": 0.999
+    },
+    {
+      "ts": "2026-10-20T14:12:01+00:00",
+      "ip": "192.168.137.225",
+      "method": "GET",
+      "uri": "/api/payments/ready",
+      "status": 200,
+      "user_agent": "python-requests/2.32.3",
+      "score": 0.999
+    },
+    {
+      "ts": "2026-10-20T14:12:59+00:00",
+      "ip": "192.168.137.230",
+      "method": "GET",
+      "uri": "/api/payments",
+      "status": 403,
+      "user_agent": "python-requests/2.32.3",
+      "score": 0.999
+    },
+    {
+      "ts": "2026-10-20T14:12:01+00:00",
+      "ip": "192.168.137.229",
+      "method": "GET",
+      "uri": "/",
+      "status": 200,
+      "user_agent": "python-requests/2.32.3",
+      "score": 0.999
+    },
+    {
+      "ts": "2026-10-20T14:12:01+00:00",
+      "ip": "192.168.137.229",
+      "method": "GET",
+      "uri": "/api/payments/ready",
+      "status": 503,
+      "user_agent": "python-requests/2.32.3",
+      "score": 0.999
+    }
+  ]
+}

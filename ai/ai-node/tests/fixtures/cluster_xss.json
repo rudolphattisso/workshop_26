@@ -1,0 +1,123 @@
+{
+  "cluster_id": "c1",
+  "signature": "5a066543b23a",
+  "window_start": "2026-10-20T14:05:00+00:00",
+  "window_end": "2026-10-20T14:05:59+00:00",
+  "n_requests": 65,
+  "n_distinct_ips": 1,
+  "score_mean": 1.0,
+  "score_max": 1.0,
+  "blocked_ratio": 1.0,
+  "attack_hints": [
+    "xss"
+  ],
+  "top_ips": [
+    {
+      "ip": "192.168.137.200",
+      "count": 65,
+      "history": null,
+      "assessment": null
+    }
+  ],
+  "top_paths": [
+    {
+      "path": "/api/payments",
+      "count": 39
+    },
+    {
+      "path": "/",
+      "count": 26
+    }
+  ],
+  "methods": {
+    "GET": 65
+  },
+  "statuses": {
+    "403": 65
+  },
+  "top_user_agents": [
+    {
+      "user_agent": "resilience-labtest/1.0",
+      "count": 65
+    }
+  ],
+  "deviations": [
+    {
+      "feature": "xss_hits",
+      "cluster_mean": 2.908,
+      "baseline_mean": 0.0,
+      "z_score": 29.1
+    },
+    {
+      "feature": "query_len",
+      "cluster_mean": 3.786,
+      "baseline_mean": 0.496,
+      "z_score": 2.9
+    },
+    {
+      "feature": "query_entropy",
+      "cluster_mean": 4.164,
+      "baseline_mean": 0.57,
+      "z_score": 2.8
+    },
+    {
+      "feature": "ip_distinct_paths",
+      "cluster_mean": 1.092,
+      "baseline_mean": 1.459,
+      "z_score": -1.4
+    },
+    {
+      "feature": "ua_len",
+      "cluster_mean": 3.135,
+      "baseline_mean": 4.197,
+      "z_score": -1.3
+    }
+  ],
+  "samples": [
+    {
+      "ts": "2026-10-20T14:05:10+00:00",
+      "ip": "192.168.137.200",
+      "method": "GET",
+      "uri": "/api/payments?merchant=%3Cbody%20onload%3Dalert%28document.cookie%29%3E",
+      "status": 403,
+      "user_agent": "resilience-labtest/1.0",
+      "score": 1.0
+    },
+    {
+      "ts": "2026-10-20T14:05:14+00:00",
+      "ip": "192.168.137.200",
+      "method": "GET",
+      "uri": "/api/payments?search=%3Cbody%20onload%3Dalert%28document.cookie%29%3E",
+      "status": 403,
+      "user_agent": "resilience-labtest/1.0",
+      "score": 1.0
+    },
+    {
+      "ts": "2026-10-20T14:05:14+00:00",
+      "ip": "192.168.137.200",
+      "method": "GET",
+      "uri": "/?q=%3Cbody%20onload%3Dalert%28document.cookie%29%3E",
+      "status": 403,
+      "user_agent": "resilience-labtest/1.0",
+      "score": 1.0
+    },
+    {
+      "ts": "2026-10-20T14:05:10+00:00",
+      "ip": "192.168.137.200",
+      "method": "GET",
+      "uri": "/?q=<body%20onload=alert(document.cookie)>",
+      "status": 403,
+      "user_agent": "resilience-labtest/1.0",
+      "score": 1.0
+    },
+    {
+      "ts": "2026-10-20T14:05:20+00:00",
+      "ip": "192.168.137.200",
+      "method": "GET",
+      "uri": "/?q=<body%20onload=alert(document.cookie)>",
+      "status": 403,
+      "user_agent": "resilience-labtest/1.0",
+      "score": 1.0
+    }
+  ]
+}
