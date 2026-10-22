@@ -1,0 +1,196 @@
+{
+  "cluster_id": "c0",
+  "signature": "21d7259d597a",
+  "window_start": "2026-10-20T14:18:00+00:00",
+  "window_end": "2026-10-20T14:18:59+00:00",
+  "n_requests": 105,
+  "n_distinct_ips": 17,
+  "score_mean": 0.992,
+  "score_max": 1.0,
+  "blocked_ratio": 0.0,
+  "attack_hints": [
+    "heavy_requests"
+  ],
+  "top_ips": [
+    {
+      "ip": "10.68.0.12",
+      "count": 13,
+      "history": {
+        "n_requests": 8,
+        "first_seen": "2026-10-20T14:17:08+00:00",
+        "share_2xx": 0.75,
+        "share_blocked": 0.0,
+        "n_successful_writes": 1,
+        "n_distinct_user_agents": 1,
+        "n_payload_requests": 0
+      },
+      "assessment": null
+    },
+    {
+      "ip": "10.68.0.6",
+      "count": 12,
+      "history": {
+        "n_requests": 5,
+        "first_seen": "2026-10-20T14:17:02+00:00",
+        "share_2xx": 0.8,
+        "share_blocked": 0.0,
+        "n_successful_writes": 1,
+        "n_distinct_user_agents": 1,
+        "n_payload_requests": 0
+      },
+      "assessment": null
+    },
+    {
+      "ip": "10.68.0.10",
+      "count": 9,
+      "history": {
+        "n_requests": 10,
+        "first_seen": "2026-10-20T14:17:04+00:00",
+        "share_2xx": 0.9,
+        "share_blocked": 0.0,
+        "n_successful_writes": 1,
+        "n_distinct_user_agents": 1,
+        "n_payload_requests": 0
+      },
+      "assessment": null
+    },
+    {
+      "ip": "10.68.0.13",
+      "count": 9,
+      "history": {
+        "n_requests": 7,
+        "first_seen": "2026-10-20T14:17:03+00:00",
+        "share_2xx": 0.571,
+        "share_blocked": 0.0,
+        "n_successful_writes": 1,
+        "n_distinct_user_agents": 1,
+        "n_payload_requests": 0
+      },
+      "assessment": null
+    },
+    {
+      "ip": "10.68.0.4",
+      "count": 8,
+      "history": {
+        "n_requests": 9,
+        "first_seen": "2026-10-20T14:17:00+00:00",
+        "share_2xx": 0.556,
+        "share_blocked": 0.0,
+        "n_successful_writes": 1,
+        "n_distinct_user_agents": 1,
+        "n_payload_requests": 0
+      },
+      "assessment": null
+    }
+  ],
+  "top_paths": [
+    {
+      "path": "/api/payments",
+      "count": 103
+    },
+    {
+      "path": "/",
+      "count": 2
+    }
+  ],
+  "methods": {
+    "GET": 105
+  },
+  "statuses": {
+    "200": 64,
+    "503": 41
+  },
+  "top_user_agents": [
+    {
+      "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0",
+      "count": 24
+    },
+    {
+      "user_agent": "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36",
+      "count": 22
+    },
+    {
+      "user_agent": "Mozilla/5.0 (Linux; Android 13; SM-A546B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/26.0 Chrome/122.0.0.0 Mo…[+18 car.]",
+      "count": 16
+    }
+  ],
+  "deviations": [
+    {
+      "feature": "endpoint_sessionless_ips",
+      "cluster_mean": 2.105,
+      "baseline_mean": 0.0,
+      "z_score": 21.1
+    },
+    {
+      "feature": "status_5xx",
+      "cluster_mean": 0.39,
+      "baseline_mean": 0.0,
+      "z_score": 3.9
+    },
+    {
+      "feature": "bytes_log",
+      "cluster_mean": 10.882,
+      "baseline_mean": 5.879,
+      "z_score": 3.2
+    },
+    {
+      "feature": "ip_distinct_paths",
+      "cluster_mean": 0.724,
+      "baseline_mean": 1.459,
+      "z_score": -2.8
+    },
+    {
+      "feature": "ip_error_ratio",
+      "cluster_mean": 0.429,
+      "baseline_mean": 0.117,
+      "z_score": 2.1
+    }
+  ],
+  "samples": [
+    {
+      "ts": "2026-10-20T14:18:56+00:00",
+      "ip": "10.68.0.6",
+      "method": "GET",
+      "uri": "/api/payments?limit=10000",
+      "status": 200,
+      "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0",
+      "score": 1.0
+    },
+    {
+      "ts": "2026-10-20T14:18:56+00:00",
+      "ip": "10.68.0.2",
+      "method": "GET",
+      "uri": "/api/payments?limit=10000",
+      "status": 503,
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.…[+5 car.]",
+      "score": 1.0
+    },
+    {
+      "ts": "2026-10-20T14:18:56+00:00",
+      "ip": "10.68.0.9",
+      "method": "GET",
+      "uri": "/api/payments?limit=10000",
+      "status": 200,
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.…[+5 car.]",
+      "score": 1.0
+    },
+    {
+      "ts": "2026-10-20T14:18:56+00:00",
+      "ip": "10.68.0.15",
+      "method": "GET",
+      "uri": "/api/payments?limit=10000",
+      "status": 200,
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0",
+      "score": 1.0
+    },
+    {
+      "ts": "2026-10-20T14:18:57+00:00",
+      "ip": "10.68.0.3",
+      "method": "GET",
+      "uri": "/api/payments?limit=10000",
+      "status": 200,
+      "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0",
+      "score": 1.0
+    }
+  ]
+}
