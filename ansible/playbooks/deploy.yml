@@ -1,0 +1,64 @@
+# Déploiement complet et idempotent de la plateforme (installation initiale ou mise à jour).
+#   scripts/ops.ps1 deploy
+- name: Déployer Resilience-Alpha sur le PC Hôte
+  hosts: pc-hote
+  gather_facts: false
+  tasks:
+    - ansible.builtin.import_tasks: ../tasks/preflight.yml
+    - ansible.builtin.import_tasks: ../tasks/vault_up.yml
+    - ansible.builtin.import_tasks: ../tasks/secrets.yml
+    - ansible.builtin.import_tasks: ../tasks/wazuh_prepare.yml
+    - ansible.builtin.import_tasks: ../tasks/bunkerweb_prepare.yml
+
+    - name: "Validation | Syntaxe du fichier Compose"
+      ansible.builtin.command: "{{ compose }} config --quiet"
+      changed_when: false
+
+    - name: "Validation | Configuration et règles Prometheus (promtool)"
+      ansible.builtin.command: >-
+        docker run --rm -v {{ project_dir }}/infra/prometheus:/etc/prometheus:ro
+        --entrypoint promtool prom/prometheus:v3.5.0
+        check config /etc/prometheus/prometheus.yml
+      changed_when: false
+
+    - name: "Validation | Configuration Alertmanager (amtool)"
+      ansible.builtin.command: >-
+        docker run --rm -v {{ project_dir }}/infra/alertmanager:/etc/alertmanager:ro
+        --entrypoint amtool prom/alertmanager:v0.28.1
+        check-config /etc/alertmanager/alertmanager.yml
+      changed_when: false
+
+    - name: "Build | Images applicatives"
+      ansible.builtin.command: "{{ compose }} build {{ '--no-cache' if (no_cache | default(false) | bool) else '' }}"
+      register: build
+      changed_when: "'Built' in build.stderr or 'naming to' in build.stderr"
+
+    - name: "Run | Démarrage / convergence des conteneurs (attente des healthchecks)"
+      # Résilient aux ports d'administration tombés dans une plage réservée par Windows après
+      # un redémarrage de Docker Desktop (voir tasks/compose_up_resilient.yml) : bascule seule
+      # sur un port libre et met .env à jour plutôt que d'échouer.
+      vars:
+        compose_up_args: "-d --remove-orphans --wait --wait-timeout 360"
+        port_env_map: >-
+          {{ {
+            lookup('ansible.builtin.ini', 'GRAFANA_PORT', file=project_dir ~ '/.env', type='properties', default='3000'): 'GRAFANA_PORT',
+            lookup('ansible.builtin.ini', 'PROMETHEUS_PORT', file=project_dir ~ '/.env', type='properties', default='9090'): 'PROMETHEUS_PORT',
+            lookup('ansible.builtin.ini', 'ALERTMANAGER_PORT', file=project_dir ~ '/.env', type='properties', default='9093'): 'ALERTMANAGER_PORT',
+            lookup('ansible.builtin.ini', 'REMEDIATION_PORT', file=project_dir ~ '/.env', type='properties', default='18090'): 'REMEDIATION_PORT',
+            lookup('ansible.builtin.ini', 'BW_UI_PORT', file=project_dir ~ '/.env', type='properties', default='17000'): 'BW_UI_PORT',
+            lookup('ansible.builtin.ini', 'VAULT_PORT', file=project_dir ~ '/.env', type='properties', default='18200'): 'VAULT_PORT',
+            lookup('ansible.builtin.ini', 'AUTO_RECOVERY_PORT', file=project_dir ~ '/.env', type='properties', default='18095'): 'AUTO_RECOVERY_PORT',
+            lookup('ansible.builtin.ini', 'DASHBOARD_PORT', file=project_dir ~ '/.env', type='properties', default='18096'): 'DASHBOARD_PORT',
+          } }}
+      ansible.builtin.include_tasks: ../tasks/compose_up_resilient.yml
+
+    - ansible.builtin.import_tasks: ../tasks/attach_controller.yml
+    - ansible.builtin.import_tasks: ../tasks/vars_urls.yml
+    # Les configs sont montées en dossier : un changement de règles/cibles n'est PAS pris en compte
+    # sans rechargement. On recharge à chaud à chaque déploiement (idempotent, sans coupure).
+    - name: "Reload | Prometheus (règles et cibles)"
+      ansible.builtin.uri: { url: "{{ prom_url }}/-/reload", method: POST }
+    - name: "Reload | Alertmanager"
+      ansible.builtin.uri: { url: "{{ am_url }}/-/reload", method: POST }
+    - ansible.builtin.import_tasks: ../tasks/wazuh_postdeploy.yml
+    - ansible.builtin.import_tasks: ../tasks/verify.yml

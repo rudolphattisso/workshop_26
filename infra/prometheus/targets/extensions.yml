@@ -1,0 +1,6 @@
+# Cibles ajoutées par les autres pôles, prises en compte sans redémarrer Prometheus.
+#
+# Module IA SOC : expose soc_waf_anomaly_score (0-100) et NON aiops_anomaly_score, pour ne jamais
+# déclencher AnomalyDetected (remédiation automatique) : voir ADR-AI-0001.
+- targets: ["ml-detector:8000"]
+  labels: { service: ml-detector, tier: soc }

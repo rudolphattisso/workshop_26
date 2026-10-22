@@ -1,0 +1,165 @@
+# Vérification fonctionnelle de la plateforme : un conteneur « Up » ne prouve rien,
+# on vérifie la chaîne complète (WAF -> auth -> API -> base) ET la chaîne d'observabilité.
+- ansible.builtin.import_tasks: vars_urls.yml
+
+- name: "Vérif | État des conteneurs"
+  ansible.builtin.command: "{{ compose }} ps --all --format json"
+  register: ps_out
+  changed_when: false
+
+- name: "Vérif | Analyse de l'état des conteneurs"
+  ansible.builtin.set_fact:
+    containers: "{{ ps_out.stdout_lines | map('from_json') | list }}"
+
+- name: "Vérif | Tous les conteneurs tournent et sont sains"
+  ansible.builtin.assert:
+    that:
+      - containers | selectattr('State', 'ne', 'running') | list | length == 0
+      - containers | selectattr('Health', 'eq', 'unhealthy') | list | length == 0
+    fail_msg: >-
+      Conteneurs en défaut : {{ containers | rejectattr('State', 'eq', 'running') | map(attribute='Service') | list
+      + containers | selectattr('Health', 'eq', 'unhealthy') | map(attribute='Service') | list }}
+    quiet: true
+
+- name: "Vérif | WAF répond"
+  ansible.builtin.uri:
+    url: "{{ waf_url }}/healthz"
+  register: r
+  retries: 10
+  delay: 3
+  until: r.status == 200
+
+- name: "Vérif | Readiness métier via le WAF (API + auth + base)"
+  ansible.builtin.uri:
+    url: "{{ waf_url }}{{ item }}"
+  loop: [/api/payments/ready, /api/auth/ready, /]
+  register: r
+  retries: 10
+  delay: 3
+  until: r.status == 200
+
+- name: "Vérif | Transaction de bout en bout : connexion de l'émetteur (alice) et du bénéficiaire (cafe-demo)"
+  ansible.builtin.uri:
+    url: "{{ waf_url }}/api/auth/login"
+    method: POST
+    body_format: json
+    body: { username: "{{ item }}", password: "{{ lookup('ansible.builtin.file', project_dir ~ '/secrets/demo_user_password') }}" }
+    headers: { User-Agent: resilience-ansible-verify }
+  loop: [alice, cafe-demo]
+  register: logins
+  no_log: true
+
+- name: "Vérif | Transaction de bout en bout : jetons retenus"
+  ansible.builtin.set_fact:
+    alice_token: "{{ logins.results[0].json.access_token }}"
+    cafe_token: "{{ logins.results[1].json.access_token }}"
+  no_log: true
+
+- name: "Vérif | Transaction de bout en bout : comptes d'alice et de cafe-demo"
+  ansible.builtin.uri:
+    url: "{{ waf_url }}/api/accounts"
+    headers:
+      Authorization: "Bearer {{ item }}"
+      User-Agent: resilience-ansible-verify
+  loop: [ "{{ alice_token }}", "{{ cafe_token }}" ]
+  register: accounts
+  no_log: true
+
+- name: "Vérif | Transaction de bout en bout : identifiants de comptes retenus"
+  ansible.builtin.set_fact:
+    from_account_id: "{{ accounts.results[0].json[0].id }}"
+    to_account_id: "{{ accounts.results[1].json[0].id }}"
+
+- name: "Vérif | Transaction de bout en bout : paiement fictif (alice -> cafe-demo)"
+  ansible.builtin.uri:
+    url: "{{ waf_url }}/api/payments"
+    method: POST
+    status_code: 201
+    body_format: json
+    body:
+      from_account_id: "{{ from_account_id }}"
+      to_account_id: "{{ to_account_id }}"
+      amount_cents: 1234
+      label: "Vérification de déploiement"
+    headers:
+      Authorization: "Bearer {{ alice_token }}"
+      Idempotency-Key: "verify-{{ now(utc=true).strftime('%Y%m%dT%H%M%S') }}"
+      User-Agent: resilience-ansible-verify
+  register: payment
+
+- name: "Vérif | Transaction de bout en bout : relecture en base"
+  ansible.builtin.uri:
+    url: "{{ waf_url }}/api/payments/{{ payment.json.id }}"
+    headers:
+      Authorization: "Bearer {{ alice_token }}"
+      User-Agent: resilience-ansible-verify
+  register: readback
+  failed_when: readback.json.status != 'CAPTURED'
+
+- name: "Vérif | Prometheus prêt"
+  ansible.builtin.uri: { url: "{{ prom_url }}/-/ready" }
+  register: r
+  retries: 10
+  delay: 3
+  until: r.status == 200
+
+- name: "Vérif | Cibles Prometheus (hors extensions) toutes UP"
+  ansible.builtin.uri:
+    url: "{{ prom_url }}/api/v1/query?query={{ 'up{job!=\"extensions\"} == 0' | urlencode }}"
+  register: down_targets
+  retries: 12
+  delay: 5
+  until: down_targets.json.data.result | length == 0
+  failed_when: false
+
+- name: "Vérif | Sonde de transaction synthétique au vert"
+  ansible.builtin.uri:
+    url: "{{ prom_url }}/api/v1/query?query=synthetic_transaction_success"
+  register: synth
+  retries: 12
+  delay: 5
+  until: (synth.json.data.result | length > 0) and (synth.json.data.result[0].value[1] == '1')
+  failed_when: false
+
+- name: "Vérif | Alertmanager prêt"
+  ansible.builtin.uri: { url: "{{ am_url }}/-/ready" }
+
+- name: "Vérif | Grafana opérationnel"
+  ansible.builtin.uri: { url: "{{ grafana_url }}/api/health" }
+  register: r
+  retries: 10
+  delay: 3
+  until: r.status == 200
+
+- name: "Vérif | Les journaux arrivent bien dans Loki (requête via Grafana)"
+  ansible.builtin.uri:
+    url: "{{ grafana_url }}/api/datasources/proxy/uid/loki/loki/api/v1/query?query={{ 'sum(count_over_time({service=\"payment-api\"}[10m]))' | urlencode }}"
+    user: admin
+    password: "{{ lookup('ansible.builtin.file', project_dir ~ '/secrets/grafana_admin_password') }}"
+    force_basic_auth: true
+  register: loki_q
+  retries: 12
+  delay: 5
+  until: loki_q.json.data.result | length > 0
+  failed_when: false
+
+- name: "Vérif | Moteur de remédiation automatique (auto-recovery) opérationnel"
+  ansible.builtin.uri: { url: "{{ remediation_url }}/health" }
+  register: remed
+
+- name: "Vérif | Supervision du pôle Dev (watchdog) opérationnelle"
+  ansible.builtin.uri: { url: "{{ watchdog_url }}/health" }
+  register: watchdog
+  failed_when: false
+
+- name: "Vérif | Rapport"
+  ansible.builtin.debug:
+    msg:
+      - "Conteneurs           : {{ containers | length }} running"
+      - "Transaction E2E      : OK (tx {{ payment.json.id }})"
+      - "Cibles Prometheus KO : {{ down_targets.json.data.result | map(attribute='metric') | map(attribute='job') | list | default([]) or 'aucune' }}"
+      - "Sonde synthétique    : {{ 'OK' if (synth.json.data.result | length > 0 and synth.json.data.result[0].value[1] == '1') else 'KO / pas encore de mesure' }}"
+      - "Logs dans Loki       : {{ 'OK' if loki_q.json.data.result | default([]) | length > 0 else 'KO (vérifier Alloy)' }}"
+      - "Supervision (dashboard) : {{ 'OK' if watchdog.status | default(0) == 200 else 'KO' }}"
+      - "Remédiation (cibles) : {{ remed.json.allowed_targets | join(', ') }}"
+      - "Grafana              : http://127.0.0.1:3000  (dashboard Resilience-Alpha)"

@@ -1,0 +1,10 @@
+# Le runner Ansible (conteneur éphémère) rejoint les réseaux edge et mgmt du projet,
+# comme le ferait un poste d'administration : il peut alors joindre le WAF et les
+# interfaces d'admin par leur nom, sans rien exposer de plus sur l'hôte.
+- name: "Contrôleur | Rejoindre les réseaux du projet"
+  ansible.builtin.command: "docker network connect {{ compose_project }}_{{ item }} {{ lookup('env', 'HOSTNAME') }}"
+  loop: [edge, mgmt]
+  register: net_connect
+  changed_when: net_connect.rc == 0
+  failed_when: net_connect.rc != 0 and 'already exists' not in net_connect.stderr
+  when: lookup('env', 'OPS_RUNNER') == '1'

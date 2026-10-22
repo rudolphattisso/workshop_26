@@ -1,0 +1,6 @@
+- name: "Maintenance | Lever le silence Alertmanager"
+  ansible.builtin.uri:
+    url: "{{ am_url }}/api/v2/silence/{{ silence_id }}"
+    method: DELETE
+  when: silence_id | default('') | length > 0
+  failed_when: false

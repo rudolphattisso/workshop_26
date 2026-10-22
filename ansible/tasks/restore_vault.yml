@@ -1,0 +1,26 @@
+# Restauration de Vault depuis une archive (la dernière par défaut) : -e restore_vault=true
+# Vault est arrêté, ses deux volumes sont remplacés par le contenu de l'archive, puis redémarré
+# (le sidecar le redescelle avec les clés restaurées).
+- name: "Restauration Vault | Choix de l'archive"
+  ansible.builtin.shell: cd "{{ backup_dir }}" && ls -1t vault-*.tar.gz | head -n 1
+  register: latest_vault
+  changed_when: false
+  when: restore_vault_file is not defined
+
+- name: "Restauration Vault | Archive retenue"
+  ansible.builtin.set_fact:
+    vault_restore_path: "{{ backup_dir }}/{{ restore_vault_file | default(latest_vault.stdout) | basename }}"
+
+- name: "Restauration Vault | Vérification SHA-256"
+  ansible.builtin.shell: cd "{{ backup_dir }}" && sha256sum -c "$(basename '{{ vault_restore_path }}').sha256"
+  changed_when: false
+
+- name: "Restauration Vault | Arrêt, remplacement des volumes, redémarrage"
+  ansible.builtin.shell: |
+    set -e
+    {{ compose }} stop vault vault-unsealer
+    docker run --rm -i -v {{ compose_project }}_vault-data:/d -v {{ compose_project }}_vault-keys:/k alpine \
+      sh -c 'rm -rf /d/* /d/.[!.]* /k/* /k/.[!.]* 2>/dev/null; tar xzf - -C /' < "{{ vault_restore_path }}"
+    {{ compose }} up -d --wait --wait-timeout 180 vault vault-unsealer
+  args: { executable: /bin/bash }
+  changed_when: true

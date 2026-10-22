@@ -1,0 +1,76 @@
+// Grafana Alloy — collecte des journaux de tous les conteneurs du projet et envoi vers Loki.
+// Les journaux ne sont jamais écrits dans des fichiers applicatifs : stdout -> Docker -> Alloy -> Loki.
+
+discovery.docker "containers" {
+  host             = "tcp://docker-proxy-ro:2375"
+  refresh_interval = "5s"
+  filter {
+    name   = "label"
+    values = ["com.docker.compose.project=" + sys.env("COMPOSE_PROJECT_NAME")]
+  }
+}
+
+discovery.relabel "containers" {
+  targets = []
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_resilience_tier"]
+    target_label  = "tier"
+  }
+}
+
+loki.source.docker "containers" {
+  host             = "tcp://docker-proxy-ro:2375"
+  targets          = discovery.docker.containers.targets
+  relabel_rules    = discovery.relabel.containers.rules
+  refresh_interval = "5s"
+  forward_to       = [loki.process.parse.receiver]
+}
+
+// Extrait le niveau des logs JSON (services Python) et des logs nginx/ModSecurity
+loki.process "parse" {
+  stage.match {
+    selector = "{service=~\"payment-api|auth|txprobe|remediation\"}"
+    stage.json {
+      expressions = { level = "level", event = "msg" }
+    }
+    stage.labels {
+      values = { level = "", event = "" }
+    }
+  }
+  stage.match {
+    selector = "{service=\"waf\"} |= \"ModSecurity\""
+    stage.static_labels {
+      values = { security = "waf_detection" }
+    }
+  }
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+// Alertes Wazuh : le manager les émet en syslog (JSON) vers Alloy:5514 (UDP, réseau interne siem).
+// On les pousse dans Loki avec service="wazuh" pour les visualiser et alerter depuis Grafana.
+loki.source.syslog "wazuh" {
+  listener {
+    address  = "0.0.0.0:5514"
+    protocol = "udp"
+    syslog_format = "rfc3164"
+    use_incoming_timestamp = false
+    labels = { service = "wazuh", tier = "siem" }
+  }
+  forward_to = [loki.write.default.receiver]
+}

@@ -1,0 +1,89 @@
+# Prometheus — collecte des métriques de la plateforme.
+global:
+  scrape_interval: 5s          # court volontairement : la démo doit montrer la reprise en quelques secondes
+  evaluation_interval: 5s
+  external_labels:
+    platform: resilience-alpha
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Services applicatifs (endpoint /metrics exposé par chaque service Python)
+  - job_name: apps
+    static_configs:
+      - targets: ["payment-api:8000"]
+        labels: { service: payment-api, tier: business }
+      - targets: ["auth:8000"]
+        labels: { service: auth, tier: business }
+      - targets: ["txprobe:8000"]
+        labels: { service: txprobe, tier: observability }
+      - targets: ["remediation:8000"]
+        labels: { service: remediation, tier: control }
+
+  # Base de données
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+        labels: { service: postgres, tier: data }
+
+  # Conteneurs (CPU, mémoire, réseau, redémarrages)
+  - job_name: cadvisor
+    scrape_interval: 10s
+    static_configs:
+      - targets: ["cadvisor:8080"]
+    metric_relabel_configs:
+      - source_labels: [container_label_com_docker_compose_service]
+        target_label: service
+      - regex: "container_label_.*"
+        action: labeldrop
+
+  # Pile d'observabilité elle-même
+  - job_name: observability
+    static_configs:
+      - targets: ["alertmanager:9093"]
+        labels: { service: alertmanager }
+      - targets: ["loki:3100"]
+        labels: { service: loki }
+      - targets: ["grafana:3000"]
+        labels: { service: grafana }
+      - targets: ["alloy:12345"]
+        labels: { service: alloy }
+
+  # Sondes boîte noire : on teste les services « de l'extérieur », à travers le WAF
+  - job_name: blackbox-http
+    metrics_path: /probe
+    params: { module: [http_2xx] }
+    static_configs:
+      - targets: ["http://bunkerweb:8080/"]
+        labels: { service: frontend }
+      - targets: ["http://bunkerweb:8080/api/payments/ready"]
+        labels: { service: payment-api }
+      - targets: ["http://bunkerweb:8080/api/auth/ready"]
+        labels: { service: auth }
+      # Vault : 200 = actif et descellé ; 503 = scellé ; pas de réponse = arrêté
+      - targets: ["http://vault:8200/v1/sys/health"]
+        labels: { service: vault }
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  # Point d'extension pour les autres pôles (ex. détecteur ML AIOps) :
+  # ajouter une cible dans infra/prometheus/targets/*.yml, rechargement automatique.
+  - job_name: extensions
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/*.yml"]
+        refresh_interval: 30s

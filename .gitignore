@@ -1,10 +1,28 @@
-# doc 
+# doc
 private/
-
 
 # Claude Code : préférences personnelles
 CLAUDE.local.md
 .claude/settings.local.json
+
+# Secrets et état local — ne JAMAIS versionner
+.env
+.env.*
+!.env.example
+secrets/*
+!secrets/README.md
+backups/*
+!backups/.gitkeep
+reports/*
+!reports/.gitkeep
+*.dump
+*.sops.dec.*
+__pycache__/
+*.pyc
+.venv/
+
+# Exports de données (logs Wazuh pour le ML) : volumineux, non versionnés
+exports/
 
 # OS
 Thumbs.db
@@ -16,7 +34,14 @@ Desktop.ini
 .idea/
 *.swp
 
-# Secrets / environnement
-.env
-.env.*
-!.env.example
+# Domaine IA
+.pytest_cache/
+.hypothesis/
+# Modèle du détecteur : entraîné pendant le build de l'image (étape « model » du Dockerfile)
+infra/ml-detector/models/*
+!infra/ml-detector/models/.gitkeep
+# Exports Wazuh réels (IP internes, charges d'attaque) : jamais versionnés
+/wazuh-alerts.*
+# PC IA : données vectorielles (ChromaDB) et rapports produits par le LLM
+ai/ai-node/data/
+ai/ai-node/reports/

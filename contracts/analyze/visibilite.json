@@ -1,0 +1,224 @@
+{
+ "cluster": {
+  "attack_hints": [
+   "distributed_flood",
+   "visibility_loss"
+  ],
+  "blocked_ratio": 0.0,
+  "cluster_id": "fenetre",
+  "deviations": [
+   {
+    "baseline_mean": 0.0,
+    "cluster_mean": 4.306,
+    "feature": "endpoint_sessionless_ips",
+    "z_score": 43.1
+   },
+   {
+    "baseline_mean": 0.0,
+    "cluster_mean": 0.569,
+    "feature": "status_5xx",
+    "z_score": 5.7
+   },
+   {
+    "baseline_mean": 0.119,
+    "cluster_mean": 0.561,
+    "feature": "ip_error_ratio",
+    "z_score": 3.1
+   },
+   {
+    "baseline_mean": 1.466,
+    "cluster_mean": 0.739,
+    "feature": "ip_distinct_paths",
+    "z_score": -2.9
+   },
+   {
+    "baseline_mean": 2.849,
+    "cluster_mean": 0.859,
+    "feature": "uri_len",
+    "z_score": -2.2
+   }
+  ],
+  "injections_answered": 0,
+  "methods": {
+   "GET": 7711,
+   "HEAD": 2,
+   "POST": 293
+  },
+  "n_distinct_ips": 368,
+  "n_requests": 8006,
+  "samples": [
+   {
+    "ip": "10.66.0.60",
+    "method": "GET",
+    "score": 1.0,
+    "status": 200,
+    "ts": "2026-10-20T14:10:49+00:00",
+    "uri": "/",
+    "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0"
+   },
+   {
+    "ip": "10.66.1.35",
+    "method": "GET",
+    "score": 1.0,
+    "status": 200,
+    "ts": "2026-10-20T14:10:49+00:00",
+    "uri": "/",
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
+   },
+   {
+    "ip": "10.66.0.3",
+    "method": "GET",
+    "score": 1.0,
+    "status": 503,
+    "ts": "2026-10-20T14:10:49+00:00",
+    "uri": "/",
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0"
+   },
+   {
+    "ip": "10.66.0.13",
+    "method": "GET",
+    "score": 1.0,
+    "status": 200,
+    "ts": "2026-10-20T14:10:49+00:00",
+    "uri": "/",
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.…[+5 car.]"
+   },
+   {
+    "ip": "10.66.0.131",
+    "method": "GET",
+    "score": 1.0,
+    "status": 200,
+    "ts": "2026-10-20T14:10:49+00:00",
+    "uri": "/",
+    "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15"
+   }
+  ],
+  "score_max": 1.0,
+  "score_mean": 0.894,
+  "signature": "visibilite067cd91eba46",
+  "statuses": {
+   "200": 3230,
+   "201": 154,
+   "400": 1,
+   "401": 24,
+   "404": 35,
+   "422": 4,
+   "499": 5,
+   "503": 4553
+  },
+  "top_ips": [
+   {
+    "assessment": null,
+    "count": 72,
+    "history": null,
+    "ip": "172.30.20.9"
+   },
+   {
+    "assessment": null,
+    "count": 58,
+    "history": null,
+    "ip": "192.168.137.90"
+   },
+   {
+    "assessment": null,
+    "count": 40,
+    "history": null,
+    "ip": "10.66.0.85"
+   },
+   {
+    "assessment": null,
+    "count": 38,
+    "history": null,
+    "ip": "10.66.0.33"
+   },
+   {
+    "assessment": null,
+    "count": 37,
+    "history": null,
+    "ip": "10.66.0.101"
+   }
+  ],
+  "top_paths": [
+   {
+    "count": 7467,
+    "path": "/"
+   },
+   {
+    "count": 324,
+    "path": "/api/payments"
+   },
+   {
+    "count": 111,
+    "path": "/api/auth/login"
+   },
+   {
+    "count": 80,
+    "path": "/api/payments/{uuid}"
+   },
+   {
+    "count": 8,
+    "path": "/api/payments/ready"
+   }
+  ],
+  "top_user_agents": [
+   {
+    "count": 1106,
+    "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E1…[+15 car.]"
+   },
+   {
+    "count": 1083,
+    "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0"
+   },
+   {
+    "count": 1083,
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0"
+   }
+  ],
+  "window_end": "2026-10-20T14:10:49+00:00",
+  "window_start": "2026-10-20T14:08:50+00:00"
+ },
+ "context": {
+  "actions_infra": [
+   {
+    "action": "restart",
+    "alerte": "WafDown",
+    "cible": "bunkerweb",
+    "detail": "firing",
+    "evenement": "alerte reçue",
+    "heure": "2026-10-20T14:10:25+00:00"
+   },
+   {
+    "action": "restart",
+    "alerte": "WafDown",
+    "cible": "bunkerweb",
+    "detail": "",
+    "evenement": "remédiation lancée",
+    "heure": "2026-10-20T14:10:26+00:00"
+   },
+   {
+    "action": "restart",
+    "alerte": "WafDown",
+    "cible": "bunkerweb",
+    "detail": "service rétabli en 14 s",
+    "evenement": "remédiation réussie",
+    "heure": "2026-10-20T14:10:40+00:00"
+   }
+  ],
+  "alarmes": [
+   {
+    "description": "503 vu par une sonde de supervision",
+    "famille": "availability",
+    "nombre": 30,
+    "regle": "31123"
+   }
+  ],
+  "escalade": {
+   "donnees_jusqu_a": "2026-10-20T14:10:50+00:00",
+   "reasons": [
+    "sources de données injoignables depuis 3 cycles (30 s) : Loki (http://loki:3100) : <urlopen error timed out>"
+   ],
+   "severity": 60,
+   "trigger": "perte_de_visibilite"
+  }
+ }
+}

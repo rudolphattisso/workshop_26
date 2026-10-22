@@ -1,0 +1,16 @@
+# Restauration de la base depuis une sauvegarde (dernière par défaut).
+#   scripts/ops.ps1 restore                         -> dernière sauvegarde
+#   scripts/ops.ps1 restore -e restore_file=payments-20261020T101500Z.dump
+- name: Restaurer les données
+  hosts: pc-hote
+  gather_facts: false
+  vars:
+    maintenance_reason: "Restauration de la base (restore.yml)"
+  tasks:
+    - ansible.builtin.import_tasks: ../tasks/attach_controller.yml
+    - ansible.builtin.import_tasks: ../tasks/maintenance_on.yml
+    - ansible.builtin.include_tasks: ../tasks/restore_vault.yml
+      when: restore_vault | default(false) | bool
+    - ansible.builtin.import_tasks: ../tasks/restore_db.yml
+    - ansible.builtin.import_tasks: ../tasks/verify.yml
+    - ansible.builtin.import_tasks: ../tasks/maintenance_off.yml
