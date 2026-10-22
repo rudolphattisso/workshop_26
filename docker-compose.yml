@@ -59,6 +59,9 @@ networks:
     internal: true
     ipam: { config: [{ subnet: 172.30.90.0/24 }] }
 
+  ia:           # pôle IA : sortie du ml-detector vers le llm-gateway du PC IA (port 8080)
+    ipam: { config: [{ subnet: 172.30.110.0/24 }] }
+
 volumes:
   pgdata:
   prometheus-data:
@@ -90,11 +93,12 @@ secrets:
   payment_db_password:    { file: ./secrets/payment_db_password }
   auth_db_password:       { file: ./secrets/auth_db_password }
   exporter_db_password:   { file: ./secrets/exporter_db_password }
-  jwt_secret:             { file: ./secrets/jwt_secret }
   demo_user_password:     { file: ./secrets/demo_user_password }
   probe_user_password:    { file: ./secrets/probe_user_password }
+  operator_password:      { file: ./secrets/operator_password }
   remediation_token:      { file: ./secrets/remediation_token }
   grafana_admin_password: { file: ./secrets/grafana_admin_password }
+  llm_gateway_token:      { file: ./secrets/llm_gateway_token }
 
 services:
   # ===========================================================================
@@ -164,6 +168,9 @@ services:
       REVERSE_PROXY_HOST_1: "http://auth:8000"
       REVERSE_PROXY_URL_2: "/api/payments"
       REVERSE_PROXY_HOST_2: "http://payment-api:8000"
+      REVERSE_PROXY_URL_3: "/api/accounts"
+      REVERSE_PROXY_HOST_3: "http://payment-api:8000"
+      # /api/operations/* n'est pas publié ici : réservé au réseau interne (moteur de remédiation).
       # --- WAF : ModSecurity + OWASP CRS v4 (bloque XSS, SQLi...) ---
       USE_MODSECURITY: "yes"
       USE_MODSECURITY_CRS: "yes"
@@ -243,7 +250,7 @@ services:
 
   frontend:
     <<: *hardening
-    build: ./services/frontend
+    build: { context: ./services, dockerfile: web/Dockerfile }
     image: resilience/frontend:${APP_VERSION:-1.0.0}
     read_only: true
     tmpfs: ["/tmp:size=16m"]
@@ -258,33 +265,41 @@ services:
 
   auth:
     <<: *python-service
-    build: { context: ./services, args: { SERVICE: auth } }
+    build: { context: ./services, dockerfile: auth/Dockerfile }
     image: resilience/auth:${APP_VERSION:-1.0.0}
     environment:
       DB_HOST: postgres
-      DB_NAME: payments
-      DB_USER: auth_svc
-      TOKEN_TTL_SECONDS: "900"
-    secrets: [auth_db_password, jwt_secret]
+      DB_NAME: auth
+      DB_USER: auth_service
+      DB_PASSWORD_FILE: /run/secrets/auth_db_password
+      DEMO_CLIENT_PASSWORD_FILE: /run/secrets/demo_user_password
+      SMOKE_CLIENT_PASSWORD_FILE: /run/secrets/probe_user_password
+      OPERATOR_PASSWORD_FILE: /run/secrets/operator_password
+      # JWT_PRIVATE_KEY_FILE volontairement absent : clé éphémère générée au démarrage
+      # (les jetons sont révoqués à chaque redémarrage de l'auth, comportement assumé).
+    secrets: [auth_db_password, demo_user_password, probe_user_password, operator_password]
     networks: [app, data, monitoring]
     depends_on: { postgres: { condition: service_healthy } }
     labels: { resilience.tier: business }
-    deploy: { resources: { limits: { memory: 192m, cpus: "1.0" } } }
+    deploy: { resources: { limits: { memory: 256m, cpus: "1.0" } } }
 
   payment-api:
     <<: *python-service
-    build: { context: ./services, args: { SERVICE: payment-api } }
+    build: { context: ./services, dockerfile: payment-api/Dockerfile }
     image: resilience/payment-api:${APP_VERSION:-1.0.0}
     environment:
       DB_HOST: postgres
-      DB_NAME: payments
-      DB_USER: payment_svc
-      MAX_AMOUNT: "10000"
-    secrets: [payment_db_password, jwt_secret]
+      DB_NAME: payment
+      DB_USER: payment_api
+      DB_PASSWORD_FILE: /run/secrets/payment_db_password
+      AUTH_JWKS_URL: http://auth:8000/api/auth/.well-known/jwks.json
+    secrets: [payment_db_password]
     networks: [app, data, monitoring]
-    depends_on: { postgres: { condition: service_healthy } }
+    depends_on:
+      postgres: { condition: service_healthy }
+      auth: { condition: service_healthy }
     labels: { resilience.tier: business }
-    deploy: { resources: { limits: { memory: 192m, cpus: "1.0" } } }
+    deploy: { resources: { limits: { memory: 256m, cpus: "1.0" } } }
 
   postgres:
     <<: *hardening
@@ -293,7 +308,7 @@ services:
     read_only: true
     tmpfs: ["/tmp:size=32m", "/var/run/postgresql:size=1m,uid=70,gid=70"]
     environment:
-      POSTGRES_DB: payments
+      POSTGRES_DB: postgres
       POSTGRES_USER: payments_admin
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
     secrets:
@@ -301,15 +316,13 @@ services:
       - payment_db_password
       - auth_db_password
       - exporter_db_password
-      - demo_user_password
-      - probe_user_password
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./infra/postgres/10-init.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
     networks: [data]                    # aucune exposition, même sur 127.0.0.1
     labels: { resilience.tier: data }
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U payments_admin -d payments"]
+      test: ["CMD-SHELL", "pg_isready -U payments_admin"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -420,7 +433,7 @@ services:
     <<: *hardening
     image: prometheuscommunity/postgres-exporter:v0.17.1
     environment:
-      DATA_SOURCE_URI: postgres:5432/payments?sslmode=disable
+      DATA_SOURCE_URI: postgres:5432/payment?sslmode=disable
       DATA_SOURCE_USER: exporter
       DATA_SOURCE_PASS_FILE: /run/secrets/exporter_db_password
     secrets: [exporter_db_password]
@@ -451,12 +464,13 @@ services:
 
   txprobe:
     <<: *python-service
-    build: { context: ./services, args: { SERVICE: txprobe } }
+    build: { context: ./services, dockerfile: smoke-test/Dockerfile }
     image: resilience/txprobe:${APP_VERSION:-1.0.0}
     environment:
       PROBE_TARGET: http://bunkerweb:8080
       PROBE_INTERVAL_SECONDS: "5"
-      PROBE_USERNAME: synthetic-probe
+      PROBE_USERNAME: smoke-client
+      PROBE_PASSWORD_FILE: /run/secrets/probe_user_password
     secrets: [probe_user_password]
     networks: [app, monitoring]
     depends_on: [bunkerweb]
@@ -464,12 +478,80 @@ services:
     deploy: { resources: { limits: { memory: 128m, cpus: "0.25" } } }
 
   # ===========================================================================
-  #  REMÉDIATION (plan de contrôle)
+  #  MODULE IA SOC (docs/ia/, ADR-AI-0001) : détecte ce que le WAF laisse passer et demande une
+  #  analyse au LLM du PC IA. Lecture seule : ne déclenche AUCUNE remédiation.
+  # ===========================================================================
+  ml-detector:
+    <<: *python-service
+    build: { context: ./infra/ml-detector, target: runtime }   # modèle entraîné pendant le build
+    image: resilience/ml-detector:${APP_VERSION:-1.0.0}
+    environment:
+      LOKI_URL: http://loki:3100
+      LOKI_WAF_QUERY: '{service="bunkerweb"}'
+      LOKI_WAZUH_QUERY: '{service="wazuh"}'
+      LOKI_REMEDIATION_QUERY: '{service="auto-recovery"}'   # actions du moteur, en lecture seule
+      LLM_GATEWAY_URL: ${LLM_GATEWAY_URL:-}       # vide : détection seule, sans appel au LLM
+      REPORTS_URL: ${REPORTS_URL:-}               # lien « Ouvrir » du tableau Grafana
+      DETECTOR_CYCLE_S: "10"
+      # Seuils estimés : à remplacer par les valeurs mesurées (voir « Calibrage » plus bas).
+      DETECTOR_INGEST_DELAY_S: "5"      # retard d'ingestion de Loki
+      DETECTOR_PROBE_INTERVAL_S: "5"    # vos sondes blackbox à travers le WAF (scrape_interval)
+      DETECTOR_PROBE_MISSED: "3"        # sondes manquées d'affilée = perte de visibilité
+      DETECTOR_VISIBILITY_ERRORS: "3"   # cycles de 10 s avec Loki injoignable
+      LOKI_WAZUH_MARGIN_S: "30"         # retard des alertes Wazuh sur les faits
+    secrets: [llm_gateway_token]
+    networks: [monitoring, ia]
+    depends_on: { loki: { condition: service_started } }
+    labels: { resilience.tier: soc }
+    deploy: { resources: { limits: { memory: 512m, cpus: "1.0" } } }
+
+  # ===========================================================================
+  #  SUPERVISION DU PÔLE DEV (watchdog + API du dashboard) — n'agit pas encore sur alerte.
   # ===========================================================================
   remediation:
     <<: *python-service
-    build: { context: ./services, args: { SERVICE: remediation } }
-    image: resilience/remediation:${APP_VERSION:-1.0.0}
+    build: { context: ./services, dockerfile: remediation/Dockerfile }
+    image: resilience/remediation-watchdog:${APP_VERSION:-1.0.0}
+    environment:
+      AUTH_JWKS_URL: http://auth:8000/api/auth/.well-known/jwks.json
+      WATCH_WAF_URL: http://bunkerweb:8080
+      WATCH_AUTH_URL: http://auth:8000
+      WATCH_PAYMENT_API_URL: http://payment-api:8000
+      WATCH_SMOKE_TEST_URL: http://txprobe:8000
+      WATCHDOG_INTERVAL_SECONDS: "5"
+    ports: ["${ADMIN_BIND_ADDR:-127.0.0.1}:${REMEDIATION_PORT:-18090}:8000"]
+    networks: [app, monitoring, mgmt]
+    depends_on: [auth, payment-api, txprobe, bunkerweb]
+    labels: { resilience.tier: observability }
+    deploy: { resources: { limits: { memory: 128m, cpus: "0.5" } } }
+
+  dashboard:
+    <<: *hardening
+    build: { context: ./services, dockerfile: dashboard/Dockerfile }
+    image: resilience/dashboard:${APP_VERSION:-1.0.0}
+    read_only: true
+    tmpfs: ["/tmp:size=16m"]
+    ports: ["${ADMIN_BIND_ADDR:-127.0.0.1}:${DASHBOARD_PORT:-18096}:8080"]
+    networks: [app, mgmt]
+    depends_on: [auth, remediation]
+    labels: { resilience.tier: observability }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    deploy: { resources: { limits: { memory: 64m, cpus: "0.5" } } }
+
+  # ===========================================================================
+  #  REMÉDIATION (plan de contrôle) — moteur d'action, cible des alertes Alertmanager.
+  #  Nom "auto-recovery" (pas "remediation") : ce dernier nom est désormais la supervision
+  #  du pôle Dev ci-dessus. À terme, à consolider en un seul service une fois que son
+  #  watchdog saura lui-même déclencher les actions (playbook SERVICE_DOWN).
+  # ===========================================================================
+  auto-recovery:
+    <<: *python-service
+    build: { context: ./services, args: { SERVICE: auto-recovery } }
+    image: resilience/auto-recovery:${APP_VERSION:-1.0.0}
     environment:
       DOCKER_API: http://docker-proxy:2375
       COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME:-resilience}
@@ -478,7 +560,7 @@ services:
       REMEDIATION_COOLDOWN_SECONDS: "${REMEDIATION_COOLDOWN_SECONDS:-45}"
       REMEDIATION_VERIFY_TIMEOUT_SECONDS: "90"
     secrets: [remediation_token]
-    ports: ["${ADMIN_BIND_ADDR:-127.0.0.1}:${REMEDIATION_PORT:-18090}:8000"]
+    ports: ["${ADMIN_BIND_ADDR:-127.0.0.1}:${AUTO_RECOVERY_PORT:-18095}:8000"]
     networks: [monitoring, control, mgmt]
     depends_on: [docker-proxy]
     labels: { resilience.tier: control }

@@ -47,6 +47,8 @@
             lookup('ansible.builtin.ini', 'REMEDIATION_PORT', file=project_dir ~ '/.env', type='properties', default='18090'): 'REMEDIATION_PORT',
             lookup('ansible.builtin.ini', 'BW_UI_PORT', file=project_dir ~ '/.env', type='properties', default='17000'): 'BW_UI_PORT',
             lookup('ansible.builtin.ini', 'VAULT_PORT', file=project_dir ~ '/.env', type='properties', default='18200'): 'VAULT_PORT',
+            lookup('ansible.builtin.ini', 'AUTO_RECOVERY_PORT', file=project_dir ~ '/.env', type='properties', default='18095'): 'AUTO_RECOVERY_PORT',
+            lookup('ansible.builtin.ini', 'DASHBOARD_PORT', file=project_dir ~ '/.env', type='properties', default='18096'): 'DASHBOARD_PORT',
           } }}
       ansible.builtin.include_tasks: ../tasks/compose_up_resilient.yml
 

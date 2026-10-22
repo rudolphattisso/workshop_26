@@ -242,7 +242,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 5
+        "y": 13
       },
       "targets": [
         {
@@ -299,7 +299,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 5
+        "y": 13
       },
       "targets": [
         {
@@ -344,7 +344,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 13
+        "y": 21
       },
       "panels": []
     },
@@ -360,7 +360,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 14
+        "y": 22
       },
       "targets": [
         {
@@ -408,7 +408,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 14
+        "y": 22
       },
       "targets": [
         {
@@ -465,7 +465,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 22
+        "y": 30
       },
       "targets": [
         {
@@ -531,7 +531,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 22
+        "y": 30
       },
       "targets": [
         {
@@ -576,7 +576,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 30
+        "y": 38
       },
       "panels": []
     },
@@ -592,7 +592,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 31
+        "y": 39
       },
       "targets": [
         {
@@ -640,7 +640,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 31
+        "y": 39
       },
       "targets": [
         {
@@ -688,7 +688,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 31
+        "y": 39
       },
       "targets": [
         {
@@ -738,54 +738,6 @@
       }
     },
     {
-      "type": "timeseries",
-      "title": "Score d'anomalie ML (pôle IA)",
-      "id": 16,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 39
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "max by (service) (aiops_anomaly_score)",
-          "legendFormat": "{{service}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "custom": {
-            "lineWidth": 2,
-            "fillOpacity": 10,
-            "stacking": {
-              "mode": "none"
-            }
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi"
-        }
-      }
-    },
-    {
       "type": "logs",
       "title": "Journal du moteur de remédiation",
       "id": 17,
@@ -795,9 +747,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 39
+        "w": 24,
+        "x": 0,
+        "y": 47
       },
       "targets": [
         {
@@ -825,7 +777,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 47
+        "y": 55
       },
       "panels": []
     },
@@ -841,7 +793,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 48
+        "y": 56
       },
       "targets": [
         {
@@ -898,7 +850,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 48
+        "y": 56
       },
       "targets": [
         {
@@ -926,7 +878,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 56
+        "y": 64
       },
       "panels": []
     },
@@ -942,7 +894,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 57
+        "y": 65
       },
       "targets": [
         {
@@ -990,7 +942,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 57
+        "y": 65
       },
       "targets": [
         {
@@ -1038,7 +990,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 65
+        "y": 73
       },
       "targets": [
         {
@@ -1065,7 +1017,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 75
+        "y": 83
       },
       "panels": [],
       "id": 25
@@ -1081,7 +1033,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 76
+        "y": 84
       },
       "targets": [
         {
@@ -1140,7 +1092,7 @@
         "h": 4,
         "w": 18,
         "x": 6,
-        "y": 76
+        "y": 84
       },
       "targets": [
         {
@@ -1183,7 +1135,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 80
+        "y": 88
       },
       "targets": [
         {
@@ -1231,7 +1183,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 80
+        "y": 88
       },
       "targets": [
         {
@@ -1250,6 +1202,77 @@
         "enableLogDetails": true
       },
       "id": 29
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "Module IA — gravité détectée (0-100, seuil d'escalade 50)",
+      "description": "Une courbe, mise à jour toutes les 10 s. Annotations : escalades vers le LLM et rapports reçus.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(soc_waf_anomaly_score)",
+          "legendFormat": "gravité"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "max": 100,
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true,
+            "thresholdsStyle": {
+              "mode": "dashed"
+            },
+            "axisLabel": "gravité (0-100)"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 50
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      }
     }
   ],
   "annotations": {
@@ -1265,6 +1288,42 @@
         "expr": "{service=\"remediation\"} |= \"remediation_\"",
         "titleFormat": "Remédiation",
         "textFormat": "{{event}}"
+      },
+      {
+        "name": "Escalades vers le LLM",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "enable": true,
+        "iconColor": "orange",
+        "expr": "{service=\"ml-detector\"} |= \"\\\"event\\\": \\\"escalade\\\"\" | json | keep trigger, gravite",
+        "titleFormat": "Escalade ({{trigger}})",
+        "textFormat": "gravité {{gravite}}",
+        "filter": {
+          "exclude": false,
+          "ids": [
+            30
+          ]
+        }
+      },
+      {
+        "name": "Rapports du LLM",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "enable": true,
+        "iconColor": "red",
+        "expr": "{service=\"ml-detector\"} |= \"\\\"event\\\": \\\"rapport\\\"\" | json | keep verdict, type, popup",
+        "titleFormat": "Rapport IA · {{verdict}} · {{type}}",
+        "textFormat": "{{popup}}",
+        "filter": {
+          "exclude": false,
+          "ids": [
+            30
+          ]
+        }
       }
     ]
   }

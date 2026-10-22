@@ -1,0 +1,144 @@
+{
+  "cluster_id": "c0",
+  "signature": "ce2165195cf9",
+  "window_start": "2026-10-20T14:05:00+00:00",
+  "window_end": "2026-10-20T14:05:58+00:00",
+  "n_requests": 84,
+  "n_distinct_ips": 1,
+  "score_mean": 0.992,
+  "score_max": 1.0,
+  "blocked_ratio": 1.0,
+  "attack_hints": [
+    "sql_injection",
+    "automated_tool"
+  ],
+  "top_ips": [
+    {
+      "ip": "192.168.137.205",
+      "count": 84,
+      "history": {
+        "n_requests": 47,
+        "first_seen": "2026-10-20T14:04:30+00:00",
+        "share_2xx": 0.0,
+        "share_blocked": 1.0,
+        "n_successful_writes": 0,
+        "n_distinct_user_agents": 1,
+        "n_payload_requests": 47
+      },
+      "assessment": null
+    }
+  ],
+  "top_paths": [
+    {
+      "path": "/api/payments",
+      "count": 50
+    },
+    {
+      "path": "/api/payments/%27%20UNION%20SELECT%20username%2Cpassword_hash%20FROM%20users--",
+      "count": 7
+    },
+    {
+      "path": "/api/payments/1%27%20OR%20SLEEP%285%29--",
+      "count": 6
+    },
+    {
+      "path": "/api/payments/1%27%20OR%20%271%27%3D%271",
+      "count": 6
+    },
+    {
+      "path": "/api/payments/1%3B%20DROP%20TABLE%20transactions%3B--",
+      "count": 5
+    }
+  ],
+  "methods": {
+    "GET": 84
+  },
+  "statuses": {
+    "403": 84
+  },
+  "top_user_agents": [
+    {
+      "user_agent": "python-requests/2.32.3",
+      "count": 84
+    }
+  ],
+  "deviations": [
+    {
+      "feature": "sqli_hits",
+      "cluster_mean": 2.06,
+      "baseline_mean": 0.0,
+      "z_score": 20.6
+    },
+    {
+      "feature": "ua_tool",
+      "cluster_mean": 1.0,
+      "baseline_mean": 0.0,
+      "z_score": 10.0
+    },
+    {
+      "feature": "path_rarity",
+      "cluster_mean": 0.405,
+      "baseline_mean": 0.002,
+      "z_score": 4.0
+    },
+    {
+      "feature": "ip_distinct_paths",
+      "cluster_mean": 2.201,
+      "baseline_mean": 1.459,
+      "z_score": 2.8
+    },
+    {
+      "feature": "ip_req_per_min",
+      "cluster_mean": 4.345,
+      "baseline_mean": 2.647,
+      "z_score": 1.9
+    }
+  ],
+  "samples": [
+    {
+      "ts": "2026-10-20T14:05:00+00:00",
+      "ip": "192.168.137.205",
+      "method": "GET",
+      "uri": "/api/payments/%27%20UNION%20SELECT%20username%2Cpassword_hash%20FROM%20users--",
+      "status": 403,
+      "user_agent": "python-requests/2.32.3",
+      "score": 1.0
+    },
+    {
+      "ts": "2026-10-20T14:05:08+00:00",
+      "ip": "192.168.137.205",
+      "method": "GET",
+      "uri": "/api/payments?id=%27%20UNION%20SELECT%20username%2Cpassword_hash%20FROM%20users--",
+      "status": 403,
+      "user_agent": "python-requests/2.32.3",
+      "score": 1.0
+    },
+    {
+      "ts": "2026-10-20T14:05:16+00:00",
+      "ip": "192.168.137.205",
+      "method": "GET",
+      "uri": "/api/payments?limit=%27%20UNION%20SELECT%20username%2Cpassword_hash%20FROM%20users--",
+      "status": 403,
+      "user_agent": "python-requests/2.32.3",
+      "score": 1.0
+    },
+    {
+      "ts": "2026-10-20T14:05:16+00:00",
+      "ip": "192.168.137.205",
+      "method": "GET",
+      "uri": "/api/payments?limit='%20UNION%20SELECT%20username,password_hash%20FROM%20users--",
+      "status": 403,
+      "user_agent": "python-requests/2.32.3",
+      "score": 1.0
+    },
+    {
+      "ts": "2026-10-20T14:05:18+00:00",
+      "ip": "192.168.137.205",
+      "method": "GET",
+      "uri": "/api/payments/%27%20UNION%20SELECT%20username%2Cpassword_hash%20FROM%20users--",
+      "status": 403,
+      "user_agent": "python-requests/2.32.3",
+      "score": 1.0
+    }
+  ]
+}

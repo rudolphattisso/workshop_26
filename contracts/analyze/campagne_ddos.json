@@ -1,0 +1,206 @@
+{
+ "cluster": {
+  "attack_hints": [
+   "distributed_flood"
+  ],
+  "blocked_ratio": 0.0,
+  "cluster_id": "c0",
+  "deviations": [
+   {
+    "baseline_mean": 0.0,
+    "cluster_mean": 4.401,
+    "feature": "endpoint_sessionless_ips",
+    "z_score": 44.0
+   },
+   {
+    "baseline_mean": 0.0,
+    "cluster_mean": 0.613,
+    "feature": "status_5xx",
+    "z_score": 6.1
+   },
+   {
+    "baseline_mean": 0.119,
+    "cluster_mean": 0.613,
+    "feature": "ip_error_ratio",
+    "z_score": 3.4
+   },
+   {
+    "baseline_mean": 1.466,
+    "cluster_mean": 0.693,
+    "feature": "ip_distinct_paths",
+    "z_score": -3.1
+   },
+   {
+    "baseline_mean": 2.849,
+    "cluster_mean": 0.693,
+    "feature": "uri_len",
+    "z_score": -2.4
+   }
+  ],
+  "injections_answered": 0,
+  "methods": {
+   "GET": 413
+  },
+  "n_distinct_ips": 163,
+  "n_requests": 413,
+  "samples": [
+   {
+    "ip": "10.66.0.247",
+    "method": "GET",
+    "score": 1.0,
+    "status": 503,
+    "ts": "2026-10-20T14:10:09+00:00",
+    "uri": "/",
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.…[+5 car.]"
+   },
+   {
+    "ip": "10.66.1.50",
+    "method": "GET",
+    "score": 1.0,
+    "status": 503,
+    "ts": "2026-10-20T14:10:09+00:00",
+    "uri": "/",
+    "user_agent": "Mozilla/5.0 (Linux; Android 13; SM-A546B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/26.0 Chrome/122.0.0.0 Mo…[+18 car.]"
+   },
+   {
+    "ip": "10.66.0.136",
+    "method": "GET",
+    "score": 1.0,
+    "status": 200,
+    "ts": "2026-10-20T14:10:09+00:00",
+    "uri": "/",
+    "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E1…[+15 car.]"
+   },
+   {
+    "ip": "10.66.0.197",
+    "method": "GET",
+    "score": 1.0,
+    "status": 503,
+    "ts": "2026-10-20T14:10:09+00:00",
+    "uri": "/",
+    "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15"
+   },
+   {
+    "ip": "10.66.0.99",
+    "method": "GET",
+    "score": 1.0,
+    "status": 503,
+    "ts": "2026-10-20T14:10:09+00:00",
+    "uri": "/",
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
+   }
+  ],
+  "score_max": 1.0,
+  "score_mean": 1.0,
+  "signature": "84945e3f2d0a",
+  "statuses": {
+   "200": 160,
+   "503": 253
+  },
+  "top_ips": [
+   {
+    "assessment": null,
+    "count": 8,
+    "history": null,
+    "ip": "10.66.0.160"
+   },
+   {
+    "assessment": null,
+    "count": 7,
+    "history": {
+     "first_seen": "2026-10-20T14:10:00+00:00",
+     "n_distinct_user_agents": 1,
+     "n_payload_requests": 0,
+     "n_requests": 3,
+     "n_successful_writes": 0,
+     "share_2xx": 0.333,
+     "share_blocked": 0.0
+    },
+    "ip": "10.66.0.61"
+   },
+   {
+    "assessment": null,
+    "count": 7,
+    "history": {
+     "first_seen": "2026-10-20T14:10:00+00:00",
+     "n_distinct_user_agents": 1,
+     "n_payload_requests": 0,
+     "n_requests": 3,
+     "n_successful_writes": 0,
+     "share_2xx": 0.667,
+     "share_blocked": 0.0
+    },
+    "ip": "10.66.1.15"
+   },
+   {
+    "assessment": null,
+    "count": 6,
+    "history": {
+     "first_seen": "2026-10-20T14:10:00+00:00",
+     "n_distinct_user_agents": 1,
+     "n_payload_requests": 0,
+     "n_requests": 4,
+     "n_successful_writes": 0,
+     "share_2xx": 0.75,
+     "share_blocked": 0.0
+    },
+    "ip": "10.66.0.28"
+   },
+   {
+    "assessment": null,
+    "count": 5,
+    "history": {
+     "first_seen": "2026-10-20T14:10:00+00:00",
+     "n_distinct_user_agents": 1,
+     "n_payload_requests": 0,
+     "n_requests": 2,
+     "n_successful_writes": 0,
+     "share_2xx": 0.5,
+     "share_blocked": 0.0
+    },
+    "ip": "10.66.0.230"
+   }
+  ],
+  "top_paths": [
+   {
+    "count": 413,
+    "path": "/"
+   }
+  ],
+  "top_user_agents": [
+   {
+    "count": 69,
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
+   },
+   {
+    "count": 61,
+    "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E1…[+15 car.]"
+   },
+   {
+    "count": 58,
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0"
+   }
+  ],
+  "window_end": "2026-10-20T14:10:09+00:00",
+  "window_start": "2026-10-20T14:10:02+00:00"
+ },
+ "context": {
+  "alarmes": [
+   {
+    "description": "503 vu par une sonde de supervision",
+    "famille": "availability",
+    "nombre": 6,
+    "regle": "31123"
+   }
+  ],
+  "escalade": {
+   "reasons": [
+    "distributed_flood (+40)",
+    "service saturé : 61% de réponses 5xx (+40)",
+    "163 IP distinctes (+10)",
+    "alarme de disponibilité pendant la fenêtre (règles 31123) (+20)"
+   ],
+   "severity": 100
+  }
+ }
+}
