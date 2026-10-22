@@ -33,3 +33,15 @@ Desktop.ini
 .vscode/
 .idea/
 *.swp
+
+# Domaine IA
+.pytest_cache/
+.hypothesis/
+# Modèle du détecteur : entraîné pendant le build de l'image (étape « model » du Dockerfile)
+infra/ml-detector/models/*
+!infra/ml-detector/models/.gitkeep
+# Exports Wazuh réels (IP internes, charges d'attaque) : jamais versionnés
+/wazuh-alerts.*
+# PC IA : données vectorielles (ChromaDB) et rapports produits par le LLM
+ai/ai-node/data/
+ai/ai-node/reports/

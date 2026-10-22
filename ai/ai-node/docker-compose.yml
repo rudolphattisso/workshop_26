@@ -1,0 +1,86 @@
+# PC IA : llm-gateway + Ollama (GPU) + ChromaDB.
+#
+#   cp .env.example .env                                     # puis générer un jeton (cf. fichier)
+#   docker compose up -d ollama chroma
+#   docker compose exec ollama ollama pull qwen2.5:7b-instruct
+#   docker compose exec ollama ollama pull nomic-embed-text
+#   docker compose run --rm index                            # indexe knowledge/ dans ChromaDB
+#   docker compose up -d llm-gateway
+#   docker compose run --rm tests                            # tests (sans GPU)
+#
+# Seul le llm-gateway est joignable depuis le réseau, et seulement sur GATEWAY_BIND : mettre
+# l'IP du PC IA sur le réseau partagé avec le PC infra, et filtrer au pare-feu pour n'accepter
+# que l'IP du PC infra. Ollama et ChromaDB ne publient aucun port.
+# Versions d'images à vérifier avant déploiement (sortie JSON par schéma : Ollama >= 0.5).
+
+x-hardening: &hardening
+  read_only: true
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+
+x-gateway: &gateway
+  <<: *hardening
+  build: { context: ., target: runtime }
+  image: resilience/llm-gateway:latest
+  user: "10001:10001"
+  tmpfs: ["/tmp:size=64m"]
+  env_file: .env
+  environment:
+    OLLAMA_URL: http://ollama:11434
+    CHROMA_HOST: chroma
+    CHROMA_PORT: "8000"
+    KNOWLEDGE_DIR: /app/knowledge
+    RULES_DIR: /app/reports
+  volumes:
+    - ./knowledge:/app/knowledge:ro
+    - ./reports:/app/reports              # fichiers de recommandations (relus par l'opérateur)
+  networks: [ai-backend]
+
+services:
+  llm-gateway:
+    <<: *gateway
+    ports: ["${GATEWAY_BIND:-127.0.0.1}:8080:8080"]
+    networks: [ai-backend, ai-front]
+    depends_on: [ollama, chroma]
+    restart: unless-stopped
+
+  index:
+    <<: *gateway
+    command: ["python", "-m", "llm_gateway.cli", "index"]
+    profiles: [tools]
+    depends_on: [ollama, chroma]
+
+  tests:
+    <<: *hardening
+    build: { context: ., target: dev }
+    user: "10001:10001"
+    tmpfs: ["/tmp:size=64m"]
+    network_mode: none
+    profiles: [tools]
+
+  ollama:
+    image: ollama/ollama:0.5.7
+    volumes: [ollama-models:/root/.ollama]
+    deploy:
+      resources:
+        reservations:
+          devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }]
+    networks: [ai-backend, ai-egress]     # ai-egress : téléchargement des modèles uniquement
+    restart: unless-stopped
+
+  chroma:
+    image: chromadb/chroma:0.5.23
+    environment:
+      IS_PERSISTENT: "TRUE"
+      ANONYMIZED_TELEMETRY: "FALSE"
+    volumes: [./data/chroma:/chroma/chroma]
+    networks: [ai-backend]
+    restart: unless-stopped
+
+networks:
+  ai-backend: { internal: true }          # gateway <-> ollama <-> chroma, sans accès extérieur
+  ai-front: {}                            # exposition du gateway vers le PC infra
+  ai-egress: {}
+
+volumes:
+  ollama-models: {}

@@ -1,0 +1,192 @@
+{
+  "cluster_id": "c0",
+  "signature": "84945e3f2d0a",
+  "window_start": "2026-10-20T14:11:00+00:00",
+  "window_end": "2026-10-20T14:11:59+00:00",
+  "n_requests": 8983,
+  "n_distinct_ips": 301,
+  "score_mean": 1.0,
+  "score_max": 1.0,
+  "blocked_ratio": 0.0,
+  "attack_hints": [
+    "distributed_flood"
+  ],
+  "top_ips": [
+    {
+      "ip": "10.66.0.59",
+      "count": 44,
+      "history": {
+        "n_requests": 37,
+        "first_seen": "2026-10-20T14:10:01+00:00",
+        "share_2xx": 0.541,
+        "share_blocked": 0.0,
+        "n_successful_writes": 0,
+        "n_distinct_user_agents": 1,
+        "n_payload_requests": 0
+      },
+      "assessment": null
+    },
+    {
+      "ip": "10.66.0.125",
+      "count": 43,
+      "history": {
+        "n_requests": 31,
+        "first_seen": "2026-10-20T14:10:02+00:00",
+        "share_2xx": 0.484,
+        "share_blocked": 0.0,
+        "n_successful_writes": 0,
+        "n_distinct_user_agents": 1,
+        "n_payload_requests": 0
+      },
+      "assessment": null
+    },
+    {
+      "ip": "10.66.0.190",
+      "count": 42,
+      "history": {
+        "n_requests": 35,
+        "first_seen": "2026-10-20T14:10:02+00:00",
+        "share_2xx": 0.343,
+        "share_blocked": 0.0,
+        "n_successful_writes": 0,
+        "n_distinct_user_agents": 1,
+        "n_payload_requests": 0
+      },
+      "assessment": null
+    },
+    {
+      "ip": "10.66.0.247",
+      "count": 42,
+      "history": {
+        "n_requests": 26,
+        "first_seen": "2026-10-20T14:10:01+00:00",
+        "share_2xx": 0.538,
+        "share_blocked": 0.0,
+        "n_successful_writes": 0,
+        "n_distinct_user_agents": 1,
+        "n_payload_requests": 0
+      },
+      "assessment": null
+    },
+    {
+      "ip": "10.66.0.5",
+      "count": 41,
+      "history": {
+        "n_requests": 25,
+        "first_seen": "2026-10-20T14:10:00+00:00",
+        "share_2xx": 0.52,
+        "share_blocked": 0.0,
+        "n_successful_writes": 0,
+        "n_distinct_user_agents": 1,
+        "n_payload_requests": 0
+      },
+      "assessment": null
+    }
+  ],
+  "top_paths": [
+    {
+      "path": "/",
+      "count": 8983
+    }
+  ],
+  "methods": {
+    "GET": 8983
+  },
+  "statuses": {
+    "503": 5376,
+    "200": 3607
+  },
+  "top_user_agents": [
+    {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0",
+      "count": 1288
+    },
+    {
+      "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E1…[+15 car.]",
+      "count": 1233
+    },
+    {
+      "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0",
+      "count": 1211
+    }
+  ],
+  "deviations": [
+    {
+      "feature": "endpoint_sessionless_ips",
+      "cluster_mean": 5.709,
+      "baseline_mean": 0.0,
+      "z_score": 57.1
+    },
+    {
+      "feature": "status_5xx",
+      "cluster_mean": 0.598,
+      "baseline_mean": 0.0,
+      "z_score": 6.0
+    },
+    {
+      "feature": "ip_error_ratio",
+      "cluster_mean": 0.604,
+      "baseline_mean": 0.117,
+      "z_score": 3.3
+    },
+    {
+      "feature": "ip_errors_per_min",
+      "cluster_mean": 2.964,
+      "baseline_mean": 0.656,
+      "z_score": 3.1
+    },
+    {
+      "feature": "ip_distinct_paths",
+      "cluster_mean": 0.693,
+      "baseline_mean": 1.459,
+      "z_score": -2.9
+    }
+  ],
+  "samples": [
+    {
+      "ts": "2026-10-20T14:11:59+00:00",
+      "ip": "10.66.0.198",
+      "method": "GET",
+      "uri": "/",
+      "status": 503,
+      "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15",
+      "score": 1.0
+    },
+    {
+      "ts": "2026-10-20T14:11:59+00:00",
+      "ip": "10.66.0.159",
+      "method": "GET",
+      "uri": "/",
+      "status": 503,
+      "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E1…[+15 car.]",
+      "score": 1.0
+    },
+    {
+      "ts": "2026-10-20T14:11:59+00:00",
+      "ip": "10.66.0.188",
+      "method": "GET",
+      "uri": "/",
+      "status": 503,
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.…[+5 car.]",
+      "score": 1.0
+    },
+    {
+      "ts": "2026-10-20T14:11:59+00:00",
+      "ip": "10.66.1.4",
+      "method": "GET",
+      "uri": "/",
+      "status": 503,
+      "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15",
+      "score": 1.0
+    },
+    {
+      "ts": "2026-10-20T14:11:59+00:00",
+      "ip": "10.66.1.36",
+      "method": "GET",
+      "uri": "/",
+      "status": 503,
+      "user_agent": "Mozilla/5.0 (Linux; Android 13; SM-A546B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/26.0 Chrome/122.0.0.0 Mo…[+18 car.]",
+      "score": 1.0
+    }
+  ]
+}

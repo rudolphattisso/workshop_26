@@ -1,0 +1,237 @@
+{
+ "cluster": {
+  "attack_hints": [
+   "service_degradation"
+  ],
+  "blocked_ratio": 0.0,
+  "cluster_id": "fenetre",
+  "deviations": [
+   {
+    "baseline_mean": 1.466,
+    "cluster_mean": 1.266,
+    "feature": "ip_distinct_paths",
+    "z_score": -0.8
+   },
+   {
+    "baseline_mean": 2.581,
+    "cluster_mean": 2.034,
+    "feature": "ip_req_per_min",
+    "z_score": -0.6
+   },
+   {
+    "baseline_mean": 0.653,
+    "cluster_mean": 0.406,
+    "feature": "ip_errors_per_min",
+    "z_score": -0.3
+   },
+   {
+    "baseline_mean": 0.088,
+    "cluster_mean": 0.158,
+    "feature": "ip_auth_failures",
+    "z_score": 0.3
+   },
+   {
+    "baseline_mean": 0.119,
+    "cluster_mean": 0.088,
+    "feature": "ip_error_ratio",
+    "z_score": -0.2
+   }
+  ],
+  "injections_answered": 0,
+  "methods": {
+   "GET": 101,
+   "HEAD": 2,
+   "POST": 90
+  },
+  "n_distinct_ips": 18,
+  "n_requests": 193,
+  "samples": [
+   {
+    "ip": "192.168.137.5",
+    "method": "HEAD",
+    "score": 0.645,
+    "status": 200,
+    "ts": "2026-10-20T14:01:40+00:00",
+    "uri": "/",
+    "user_agent": "Mozilla/5.0+(compatible; UptimeRobot/2.0; http://www.uptimerobot.com/)"
+   },
+   {
+    "ip": "192.168.137.25",
+    "method": "GET",
+    "score": 0.628,
+    "status": 200,
+    "ts": "2026-10-20T14:01:15+00:00",
+    "uri": "/?utm_source=google&utm_medium=cpc&utm_term=paiement%20en%20ligne&gclid=Cj0KCQjw4Oe4BhCcARIsADQ0csmX7",
+    "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0"
+   },
+   {
+    "ip": "192.168.137.241",
+    "method": "HEAD",
+    "score": 0.625,
+    "status": 200,
+    "ts": "2026-10-20T14:01:23+00:00",
+    "uri": "/?lang=fr",
+    "user_agent": "WhatsApp/2.24.20.79 A"
+   },
+   {
+    "ip": "192.168.137.20",
+    "method": "GET",
+    "score": 0.623,
+    "status": 200,
+    "ts": "2026-10-20T14:02:06+00:00",
+    "uri": "/?utm_source=google&utm_medium=cpc&utm_term=paiement%20en%20ligne&gclid=Cj0KCQjw4Oe4BhCcARIsADQ0csmX7",
+    "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E1…[+15 car.]"
+   },
+   {
+    "ip": "192.168.137.40",
+    "method": "POST",
+    "score": 0.619,
+    "status": 401,
+    "ts": "2026-10-20T14:01:23+00:00",
+    "uri": "/api/auth/login",
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.…[+5 car.]"
+   }
+  ],
+  "score_max": 0.645,
+  "score_mean": 0.484,
+  "signature": "symptomebe1f228086a4",
+  "statuses": {
+   "200": 120,
+   "201": 54,
+   "400": 1,
+   "401": 9,
+   "404": 5,
+   "422": 1,
+   "499": 2,
+   "502": 1
+  },
+  "top_ips": [
+   {
+    "assessment": null,
+    "count": 36,
+    "history": {
+     "first_seen": "2026-10-20T14:00:32+00:00",
+     "n_distinct_user_agents": 1,
+     "n_payload_requests": 0,
+     "n_requests": 24,
+     "n_successful_writes": 16,
+     "share_2xx": 1.0,
+     "share_blocked": 0.0
+    },
+    "ip": "172.30.20.9"
+   },
+   {
+    "assessment": null,
+    "count": 24,
+    "history": {
+     "first_seen": "2026-10-20T14:00:37+00:00",
+     "n_distinct_user_agents": 1,
+     "n_payload_requests": 0,
+     "n_requests": 10,
+     "n_successful_writes": 3,
+     "share_2xx": 0.7,
+     "share_blocked": 0.0
+    },
+    "ip": "192.168.137.100"
+   },
+   {
+    "assessment": null,
+    "count": 17,
+    "history": {
+     "first_seen": "2026-10-20T14:00:50+00:00",
+     "n_distinct_user_agents": 1,
+     "n_payload_requests": 0,
+     "n_requests": 27,
+     "n_successful_writes": 24,
+     "share_2xx": 0.889,
+     "share_blocked": 0.0
+    },
+    "ip": "192.168.137.90"
+   },
+   {
+    "assessment": null,
+    "count": 16,
+    "history": {
+     "first_seen": "2026-10-20T14:00:56+00:00",
+     "n_distinct_user_agents": 1,
+     "n_payload_requests": 0,
+     "n_requests": 2,
+     "n_successful_writes": 1,
+     "share_2xx": 1.0,
+     "share_blocked": 0.0
+    },
+    "ip": "192.168.137.39"
+   },
+   {
+    "assessment": null,
+    "count": 15,
+    "history": {
+     "first_seen": "2026-10-20T14:00:30+00:00",
+     "n_distinct_user_agents": 1,
+     "n_payload_requests": 0,
+     "n_requests": 6,
+     "n_successful_writes": 1,
+     "share_2xx": 0.5,
+     "share_blocked": 0.0
+    },
+    "ip": "192.168.137.40"
+   }
+  ],
+  "top_paths": [
+   {
+    "count": 100,
+    "path": "/api/payments"
+   },
+   {
+    "count": 34,
+    "path": "/api/auth/login"
+   },
+   {
+    "count": 28,
+    "path": "/"
+   },
+   {
+    "count": 23,
+    "path": "/api/payments/{uuid}"
+   },
+   {
+    "count": 4,
+    "path": "/api/payments/ready"
+   }
+  ],
+  "top_user_agents": [
+   {
+    "count": 36,
+    "user_agent": "resilience-txprobe/1.0"
+   },
+   {
+    "count": 35,
+    "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0"
+   },
+   {
+    "count": 25,
+    "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15"
+   }
+  ],
+  "window_end": "2026-10-20T14:02:09+00:00",
+  "window_start": "2026-10-20T14:01:10+00:00"
+ },
+ "context": {
+  "alarmes": [
+   {
+    "description": "Remédiation en échec : bascule PRA",
+    "famille": "availability",
+    "nombre": 1,
+    "regle": "100210"
+   }
+  ],
+  "escalade": {
+   "reasons": [
+    "1 alarme(s) de disponibilité sans campagne détectée (+40)",
+    "remédiation automatique EN ÉCHEC, bascule PRA demandée (Wazuh 100210 ou journal du moteur) (+30)"
+   ],
+   "severity": 70,
+   "trigger": "symptome_sans_campagne"
+  }
+ }
+}
